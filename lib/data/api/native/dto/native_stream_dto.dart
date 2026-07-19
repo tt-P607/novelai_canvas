@@ -1,12 +1,12 @@
 import 'dart:convert';
 
 import '../../common/api_request_builder.dart';
-import 'native_text_to_image_request_dto.dart';
 
 class NativeStreamRequestDto {
-  const NativeStreamRequestDto(this.generation);
+  const NativeStreamRequestDto(this.payload);
 
-  final NativeTextToImageRequestDto generation;
+  /// 完整的 NovelAI 生成请求，可对应 generate、img2img 或 infill。
+  final JsonMap payload;
 }
 
 class NativeStreamEventDto {
@@ -51,10 +51,12 @@ class NativeStreamRequestBuilder
     NativeStreamRequestDto request, {
     List<JsonMap> patches = const [],
   }) {
-    final base = const NativeTextToImageRequestBuilder().build(
-      request.generation,
-    );
-    final parameters = Map<String, Object?>.from(base['parameters']! as Map)
+    final base = Map<String, Object?>.from(request.payload);
+    final rawParameters = base['parameters'];
+    if (rawParameters is! Map) {
+      throw const FormatException('流式生成请求缺少 parameters。');
+    }
+    final parameters = Map<String, Object?>.from(rawParameters)
       ..['stream'] = 'sse';
     base['parameters'] = parameters;
     return applyRequestPatches(base, patches);

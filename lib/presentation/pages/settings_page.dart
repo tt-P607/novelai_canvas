@@ -7,6 +7,8 @@ import '../../core/network/backend_mode.dart';
 import '../../domain/repositories/secure_credential_store.dart';
 import '../controllers/app_settings_controller.dart';
 import '../controllers/data_management_controller.dart';
+import '../controllers/llm_assistant_settings_controller.dart';
+import 'llm_assistant_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
@@ -14,11 +16,13 @@ class SettingsPage extends StatefulWidget {
     required this.controller,
     required this.credentialStore,
     required this.dataManagementController,
+    required this.llmSettingsController,
   });
 
   final AppSettingsController controller;
   final SecureCredentialStore credentialStore;
   final DataManagementController dataManagementController;
+  final LlmAssistantSettingsController llmSettingsController;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -112,162 +116,232 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
-        children: [
-          Text(
-            '连接与安全',
-            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '密钥仅写入系统 Keychain / Keystore，普通设置中只保存后端模式和网关地址。',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: colors.onSurfaceVariant,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('默认后端', style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 16),
-                  SegmentedButton<BackendMode>(
-                    segments: BackendMode.values
-                        .map(
-                          (mode) => ButtonSegment(
-                            value: mode,
-                            label: Text(
-                              mode == BackendMode.native ? '原生接口' : '自建网关',
+      child: CustomScrollView(
+        slivers: [
+          const SliverAppBar.large(title: Text('设置')),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+            sliver: SliverList.list(
+              children: [
+                _SettingsHero(colors: colors),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '默认后端',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 16),
+                        SegmentedButton<BackendMode>(
+                          segments: BackendMode.values
+                              .map(
+                                (mode) => ButtonSegment(
+                                  value: mode,
+                                  label: Text(
+                                    mode == BackendMode.native
+                                        ? '原生接口'
+                                        : '自建网关',
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          selected: {_mode},
+                          onSelectionChanged: (value) {
+                            setState(() => _mode = value.first);
+                          },
+                        ),
+                        const SizedBox(height: 18),
+                        TextField(
+                          controller: _gatewayUrlController,
+                          keyboardType: TextInputType.url,
+                          autocorrect: false,
+                          decoration: const InputDecoration(
+                            labelText: '网关 Base URL',
+                            hintText: 'https://example.com',
+                            prefixIcon: Icon(Icons.link_rounded),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '安全凭据',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 8),
+                        if (_loadingSecrets)
+                          const LinearProgressIndicator()
+                        else ...[
+                          TextField(
+                            controller: _novelAiTokenController,
+                            obscureText: _obscureNovelAiToken,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            decoration: InputDecoration(
+                              labelText: 'NovelAI Token',
+                              prefixIcon: const Icon(Icons.key_rounded),
+                              suffixIcon: IconButton(
+                                onPressed: () => setState(
+                                  () => _obscureNovelAiToken =
+                                      !_obscureNovelAiToken,
+                                ),
+                                icon: Icon(
+                                  _obscureNovelAiToken
+                                      ? Icons.visibility_rounded
+                                      : Icons.visibility_off_rounded,
+                                ),
+                              ),
                             ),
                           ),
-                        )
-                        .toList(),
-                    selected: {_mode},
-                    onSelectionChanged: (value) {
-                      setState(() => _mode = value.first);
-                    },
-                  ),
-                  const SizedBox(height: 18),
-                  TextField(
-                    controller: _gatewayUrlController,
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: '网关 Base URL',
-                      hintText: 'https://example.com',
-                      prefixIcon: Icon(Icons.link_rounded),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _gatewayKeyController,
+                            obscureText: _obscureGatewayKey,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            decoration: InputDecoration(
+                              labelText: '网关 API Key（可选）',
+                              prefixIcon: const Icon(Icons.vpn_key_rounded),
+                              suffixIcon: IconButton(
+                                onPressed: () => setState(
+                                  () =>
+                                      _obscureGatewayKey = !_obscureGatewayKey,
+                                ),
+                                icon: Icon(
+                                  _obscureGatewayKey
+                                      ? Icons.visibility_rounded
+                                      : Icons.visibility_off_rounded,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('安全凭据', style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 8),
-                  if (_loadingSecrets)
-                    const LinearProgressIndicator()
-                  else ...[
-                    TextField(
-                      controller: _novelAiTokenController,
-                      obscureText: _obscureNovelAiToken,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: InputDecoration(
-                        labelText: 'NovelAI Token',
-                        prefixIcon: const Icon(Icons.key_rounded),
-                        suffixIcon: IconButton(
-                          onPressed: () => setState(
-                            () => _obscureNovelAiToken = !_obscureNovelAiToken,
-                          ),
-                          icon: Icon(
-                            _obscureNovelAiToken
-                                ? Icons.visibility_rounded
-                                : Icons.visibility_off_rounded,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _gatewayKeyController,
-                      obscureText: _obscureGatewayKey,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: InputDecoration(
-                        labelText: '网关 API Key（可选）',
-                        prefixIcon: const Icon(Icons.vpn_key_rounded),
-                        suffixIcon: IconButton(
-                          onPressed: () => setState(
-                            () => _obscureGatewayKey = !_obscureGatewayKey,
-                          ),
-                          icon: Icon(
-                            _obscureGatewayKey
-                                ? Icons.visibility_rounded
-                                : Icons.visibility_off_rounded,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _DataManagementCard(
-            controller: widget.dataManagementController,
-            showMessage: _showMessage,
-          ),
-          const SizedBox(height: 16),
-          FutureBuilder<PackageInfo>(
-            future: PackageInfo.fromPlatform(),
-            builder: (context, snapshot) {
-              final version = snapshot.data == null
-                  ? '正在读取版本…'
-                  : '${snapshot.data!.version}+${snapshot.data!.buildNumber}';
-              return Card(
-                child: ListTile(
-                  leading: const Icon(Icons.info_outline_rounded),
-                  title: const Text(AppConstants.appName),
-                  subtitle: Text('版本 $version\n包名 com.elysia.novelaicanvas'),
-                  isThreeLine: true,
                 ),
-              );
-            },
-          ),
-          const SizedBox(height: 22),
-          FilledButton.icon(
-            onPressed: _saving || _loadingSecrets ? null : _save,
-            icon: _saving
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.save_rounded),
-            label: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 13),
-              child: Text('保存设置'),
+                const SizedBox(height: 16),
+                Card(
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.auto_awesome_rounded,
+                      color: colors.primary,
+                    ),
+                    title: const Text('提示词助手'),
+                    subtitle: const Text(
+                      'LLM 连接、模型、Danbooru、Vision 与四套可编辑 Prompt',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (context) => LlmAssistantSettingsPage(
+                          controller: widget.llmSettingsController,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _DataManagementCard(
+                  controller: widget.dataManagementController,
+                  showMessage: _showMessage,
+                ),
+                const SizedBox(height: 16),
+                FutureBuilder<PackageInfo>(
+                  future: PackageInfo.fromPlatform(),
+                  builder: (context, snapshot) {
+                    final version = snapshot.data == null
+                        ? '正在读取版本…'
+                        : '${snapshot.data!.version}+${snapshot.data!.buildNumber}';
+                    return Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.info_outline_rounded),
+                        title: const Text(AppConstants.appName),
+                        subtitle: Text(
+                          '版本 $version\n包名 com.elysia.novelaicanvas',
+                        ),
+                        isThreeLine: true,
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 22),
+                FilledButton.icon(
+                  onPressed: _saving || _loadingSecrets ? null : _save,
+                  icon: _saving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_rounded),
+                  label: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 13),
+                    child: Text('保存设置'),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _SettingsHero extends StatelessWidget {
+  const _SettingsHero({required this.colors});
+
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: colors.primaryContainer.withValues(alpha: 0.32),
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: colors.primary.withValues(alpha: 0.22)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.shield_moon_rounded, color: colors.primary, size: 30),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '连接与隐私',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                '生图后端与提示词助手分别配置；所有密钥只写入系统 Keychain / Keystore。',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _DataManagementCard extends StatelessWidget {

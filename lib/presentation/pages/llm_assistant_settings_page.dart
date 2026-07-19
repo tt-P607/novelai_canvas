@@ -17,7 +17,6 @@ class _LlmAssistantSettingsPageState extends State<LlmAssistantSettingsPage> {
   late final TextEditingController _provider;
   late final TextEditingController _baseUrl;
   late final TextEditingController _model;
-  late final TextEditingController _visionModel;
   late final TextEditingController _danbooruUrl;
   late final TextEditingController _apiKey;
   bool _showNsfw = false;
@@ -31,8 +30,9 @@ class _LlmAssistantSettingsPageState extends State<LlmAssistantSettingsPage> {
     final settings = widget.controller.settings;
     _provider = TextEditingController(text: settings.providerName);
     _baseUrl = TextEditingController(text: settings.baseUrl);
-    _model = TextEditingController(text: settings.model);
-    _visionModel = TextEditingController(text: settings.visionModel);
+    _model = TextEditingController(
+      text: settings.model.isNotEmpty ? settings.model : settings.visionModel,
+    );
     _danbooruUrl = TextEditingController(text: settings.danbooruBaseUrl);
     _apiKey = TextEditingController();
     _showNsfw = settings.showNsfw;
@@ -49,7 +49,6 @@ class _LlmAssistantSettingsPageState extends State<LlmAssistantSettingsPage> {
     _provider.dispose();
     _baseUrl.dispose();
     _model.dispose();
-    _visionModel.dispose();
     _danbooruUrl.dispose();
     _apiKey.dispose();
     super.dispose();
@@ -66,7 +65,6 @@ class _LlmAssistantSettingsPageState extends State<LlmAssistantSettingsPage> {
       providerName: _provider.text,
       baseUrl: _baseUrl.text,
       model: _model.text,
-      visionModel: _visionModel.text,
       danbooruBaseUrl: _danbooruUrl.text,
       showNsfw: _showNsfw,
       apiKey: _apiKey.text,
@@ -126,15 +124,10 @@ class _LlmAssistantSettingsPageState extends State<LlmAssistantSettingsPage> {
                       TextField(
                         controller: _model,
                         decoration: const InputDecoration(
-                          labelText: '文本模型',
-                          hintText: 'gpt-4.1-mini',
-                        ),
-                      ),
-                      TextField(
-                        controller: _visionModel,
-                        decoration: const InputDecoration(
-                          labelText: 'Vision 模型（可选）',
-                          hintText: '必须支持 image_url 多模态输入',
+                          labelText: '模型',
+                          hintText: '例如 gpt-4.1-mini',
+                          helperText:
+                              '同一个模型用于提示词整理与识图；识图时该模型必须支持 image_url 多模态输入。',
                         ),
                       ),
                     ],

@@ -9,6 +9,7 @@ import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
 import '../controllers/prompt_assistant_controller.dart';
+import '../widgets/character_position_grid.dart';
 import 'mask_editor_page.dart';
 import 'prompt_assistant_page.dart';
 
@@ -33,7 +34,10 @@ class _CreationPageState extends State<CreationPage> {
   late final TextEditingController _negativeController;
   late final TextEditingController _modelController;
   late final TextEditingController _seedController;
+  late final TextEditingController _customWidthController;
+  late final TextEditingController _customHeightController;
   final ImagePicker _picker = ImagePicker();
+  bool _assistantMinimized = false;
 
   GenerationController get controller => widget.controller;
 
@@ -46,6 +50,12 @@ class _CreationPageState extends State<CreationPage> {
     );
     _modelController = TextEditingController(text: controller.model);
     _seedController = TextEditingController(text: controller.seed.toString());
+    _customWidthController = TextEditingController(
+      text: controller.width.toString(),
+    );
+    _customHeightController = TextEditingController(
+      text: controller.height.toString(),
+    );
     controller.addListener(_syncControllers);
   }
 
@@ -61,6 +71,14 @@ class _CreationPageState extends State<CreationPage> {
     }
     final seed = controller.seed.toString();
     if (_seedController.text != seed) _seedController.text = seed;
+    final width = controller.width.toString();
+    final height = controller.height.toString();
+    if (_customWidthController.text != width) {
+      _customWidthController.text = width;
+    }
+    if (_customHeightController.text != height) {
+      _customHeightController.text = height;
+    }
   }
 
   @override
@@ -70,129 +88,188 @@ class _CreationPageState extends State<CreationPage> {
     _negativeController.dispose();
     _modelController.dispose();
     _seedController.dispose();
+    _customWidthController.dispose();
+    _customHeightController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: ListenableBuilder(
-        listenable: controller,
-        builder: (context, _) => CustomScrollView(
-          slivers: [
-            SliverAppBar.large(
-              title: const Text('创作'),
-              actions: [
-                IconButton(
-                  tooltip: '提示词助手',
-                  onPressed: _openPromptAssistant,
-                  icon: const Icon(Icons.auto_fix_high_rounded),
+      child: Stack(
+        children: [
+          ListenableBuilder(
+            listenable: controller,
+            builder: (context, _) => CustomScrollView(
+              slivers: [
+                SliverAppBar.large(
+                  title: const Text('创作'),
+                  actions: [
+                    IconButton(
+                      tooltip: '提示词助手',
+                      onPressed: _openPromptAssistant,
+                      icon: const Icon(Icons.auto_fix_high_rounded),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 16),
+                      child: Chip(
+                        avatar: Icon(
+                          controller.queueState.isRunning
+                              ? Icons.hourglass_top_rounded
+                              : Icons.cloud_done_rounded,
+                          size: 18,
+                        ),
+                        label: Text(
+                          controller.queueState.isRunning
+                              ? '生成中 · ${controller.queueState.pendingCount} 排队'
+                              : '${controller.queueState.pendingCount} 个任务排队',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: Chip(
-                    avatar: Icon(
-                      controller.queueState.isRunning
-                          ? Icons.hourglass_top_rounded
-                          : Icons.cloud_done_rounded,
-                      size: 18,
-                    ),
-                    label: Text(
-                      controller.queueState.isRunning
-                          ? '生成中 · ${controller.queueState.pendingCount} 排队'
-                          : '${controller.queueState.pendingCount} 个任务排队',
-                    ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+                  sliver: SliverList.list(
+                    children: [
+                      _modeSelector(),
+                      const SizedBox(height: 12),
+                      _assistantShortcut(),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _promptController,
+                        minLines: 4,
+                        maxLines: 8,
+                        onChanged: controller.updatePrompt,
+                        decoration: const InputDecoration(
+                          labelText: '正向提示词',
+                          hintText: '1girl, masterpiece, cinematic lighting...',
+                          alignLabelWithHint: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _negativeController,
+                        minLines: 2,
+                        maxLines: 5,
+                        onChanged: controller.updateNegativePrompt,
+                        decoration: const InputDecoration(
+                          labelText: '负向提示词',
+                          alignLabelWithHint: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _parameterCard(),
+                      if (controller.mode == GenerationMode.textToImage) ...[
+                        const SizedBox(height: 16),
+                        _advancedReferenceCard(),
+                      ],
+                      if (controller.mode != GenerationMode.textToImage) ...[
+                        const SizedBox(height: 16),
+                        _imageInputCard(),
+                      ],
+                      const SizedBox(height: 16),
+                      _statusCard(),
+                      if (controller.queueState.previewImageBytes != null) ...[
+                        const SizedBox(height: 12),
+                        Card(
+                          clipBehavior: Clip.antiAlias,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Image.memory(
+                                Uint8List.fromList(
+                                  controller.queueState.previewImageBytes!,
+                                ),
+                                width: double.infinity,
+                                fit: BoxFit.contain,
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Text(
+                                  '原生流式预览 · Step ${controller.queueState.previewStep ?? 0}',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: controller.queueState.isRunning
+                            ? null
+                            : _submit,
+                        icon: const Icon(Icons.auto_awesome_rounded),
+                        label: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          child: Text('加入生成队列'),
+                        ),
+                      ),
+                      if (controller.queueState.isRunning) ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: controller.cancelActive,
+                          icon: const Icon(Icons.stop_circle_outlined),
+                          label: const Text('取消当前任务'),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
             ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-              sliver: SliverList.list(
-                children: [
-                  _modeSelector(),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _promptController,
-                    minLines: 4,
-                    maxLines: 8,
-                    onChanged: controller.updatePrompt,
-                    decoration: const InputDecoration(
-                      labelText: '正向提示词',
-                      hintText: '1girl, masterpiece, cinematic lighting...',
-                      alignLabelWithHint: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _negativeController,
-                    minLines: 2,
-                    maxLines: 5,
-                    onChanged: controller.updateNegativePrompt,
-                    decoration: const InputDecoration(
-                      labelText: '负向提示词',
-                      alignLabelWithHint: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _parameterCard(),
-                  if (controller.mode == GenerationMode.textToImage) ...[
-                    const SizedBox(height: 16),
-                    _advancedReferenceCard(),
-                  ],
-                  if (controller.mode != GenerationMode.textToImage) ...[
-                    const SizedBox(height: 16),
-                    _imageInputCard(),
-                  ],
-                  const SizedBox(height: 16),
-                  _statusCard(),
-                  if (controller.queueState.previewImageBytes != null) ...[
-                    const SizedBox(height: 12),
-                    Card(
-                      clipBehavior: Clip.antiAlias,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Image.memory(
-                            Uint8List.fromList(
-                              controller.queueState.previewImageBytes!,
-                            ),
-                            width: double.infinity,
-                            fit: BoxFit.contain,
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Text(
-                              '原生流式预览 · Step ${controller.queueState.previewStep ?? 0}',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  FilledButton.icon(
-                    onPressed: controller.queueState.isRunning ? null : _submit,
-                    icon: const Icon(Icons.auto_awesome_rounded),
-                    label: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      child: Text('加入生成队列'),
-                    ),
-                  ),
-                  if (controller.queueState.isRunning) ...[
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: controller.cancelActive,
-                      icon: const Icon(Icons.stop_circle_outlined),
-                      label: const Text('取消当前任务'),
-                    ),
-                  ],
-                ],
+          ),
+          if (_assistantMinimized)
+            Positioned(
+              right: 18,
+              bottom: 92,
+              child: FloatingActionButton.small(
+                heroTag: 'prompt-assistant-bubble',
+                tooltip: '打开提示词助手',
+                onPressed: () {
+                  setState(() => _assistantMinimized = false);
+                  _openPromptAssistant();
+                },
+                child: const Icon(Icons.auto_fix_high_rounded),
               ),
             ),
-          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _assistantShortcut() {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.secondaryContainer.withValues(alpha: 0.32),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: _openPromptAssistant,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(Icons.auto_fix_high_rounded, color: colors.secondary),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '自然语言写提示词',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    SizedBox(height: 2),
+                    Text('点击即用：描述画面，整理后直接回填下方输入框'),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_forward_rounded),
+            ],
+          ),
         ),
       ),
     );
@@ -238,26 +315,74 @@ class _CreationPageState extends State<CreationPage> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            initialValue: '${controller.width}x${controller.height}',
-            decoration: const InputDecoration(
-              labelText: '尺寸',
-              border: OutlineInputBorder(),
-            ),
+            initialValue: _officialSizeValue(),
+            decoration: const InputDecoration(labelText: '官方画幅预设'),
             items: const [
-              DropdownMenuItem(value: '832x1216', child: Text('竖图 832 × 1216')),
-              DropdownMenuItem(value: '1216x832', child: Text('横图 1216 × 832')),
+              DropdownMenuItem(
+                value: '832x1216',
+                child: Text('竖图 · 832 × 1216'),
+              ),
               DropdownMenuItem(
                 value: '1024x1024',
-                child: Text('方图 1024 × 1024'),
+                child: Text('方图 · 1024 × 1024'),
               ),
+              DropdownMenuItem(
+                value: '1216x832',
+                child: Text('横图 · 1216 × 832'),
+              ),
+              DropdownMenuItem(
+                value: '1024x1536',
+                child: Text('大竖图 · 1024 × 1536 · 消耗 Anlas'),
+              ),
+              DropdownMenuItem(
+                value: '1536x1024',
+                child: Text('大横图 · 1536 × 1024 · 消耗 Anlas'),
+              ),
+              DropdownMenuItem(value: 'custom', child: Text('自定义画幅')),
             ],
             onChanged: (value) {
-              final parts = value!.split('x');
+              if (value == null || value == 'custom') return;
+              final parts = value.split('x');
               controller.updateSize(
                 width: int.parse(parts[0]),
                 height: int.parse(parts[1]),
               );
             },
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _customWidthController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '自定义宽度'),
+                  onSubmitted: (_) => _applyCustomSize(),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: Text('×'),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _customHeightController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '自定义高度'),
+                  onSubmitted: (_) => _applyCustomSize(),
+                ),
+              ),
+              IconButton.filledTonal(
+                tooltip: '应用自定义画幅',
+                onPressed: _applyCustomSize,
+                icon: const Icon(Icons.check_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '范围 64–1600，保存时自动对齐到最接近的 64 倍数。',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 16),
           Text('步数 ${controller.steps}'),
@@ -315,13 +440,20 @@ class _CreationPageState extends State<CreationPage> {
               onChanged: controller.updateNoise,
             ),
           ],
-          if (controller.mode == GenerationMode.textToImage)
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('渐进式中间预览'),
+            subtitle: const Text('NovelAI 原生后端的文生图、图生图和局部重绘均可使用'),
+            value: controller.stream,
+            onChanged: controller.updateStream,
+          ),
+          if (controller.mode == GenerationMode.inpaint)
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
-              title: const Text('原生 SSE 中间预览'),
-              subtitle: const Text('仅 NovelAI 原生后端可用'),
-              value: controller.stream,
-              onChanged: controller.updateStream,
+              title: const Text('边缘融合'),
+              subtitle: const Text('默认开启，将原图叠加到结果边缘以减少局部重绘割裂'),
+              value: controller.addOriginalImage,
+              onChanged: controller.updateAddOriginalImage,
             ),
         ],
       ),
@@ -534,25 +666,13 @@ class _CreationPageState extends State<CreationPage> {
             ),
             decoration: const InputDecoration(labelText: '角色负向提示词'),
           ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: _positionKey(character.position),
-            decoration: const InputDecoration(labelText: '5 × 5 角色点位'),
-            items: _characterPositions()
-                .map(
-                  (entry) =>
-                      DropdownMenuItem(value: entry.$1, child: Text(entry.$1)),
-                )
-                .toList(),
-            onChanged: (key) {
-              final position = _characterPositions()
-                  .firstWhere((entry) => entry.$1 == key)
-                  .$2;
-              controller.updateCharacter(
-                index,
-                character.copyWith(position: position),
-              );
-            },
+          const SizedBox(height: 12),
+          CharacterPositionGrid(
+            value: character.position,
+            onChanged: (position) => controller.updateCharacter(
+              index,
+              character.copyWith(position: position),
+            ),
           ),
         ],
       ),
@@ -567,21 +687,6 @@ class _CreationPageState extends State<CreationPage> {
   Future<void> _pickCharacterReference() async {
     final image = await _picker.pickImage(source: ImageSource.gallery);
     if (image != null) controller.addCharacterReference(image.path);
-  }
-
-  List<(String, CharacterPosition)> _characterPositions() => [
-    for (var row = 0; row < 5; row++)
-      for (var column = 0; column < 5; column++)
-        (
-          '${String.fromCharCode(65 + row)}${column + 1}',
-          CharacterPosition(x: 0.1 + column * 0.2, y: 0.1 + row * 0.2),
-        ),
-  ];
-
-  String _positionKey(CharacterPosition position) {
-    final column = ((position.x - 0.1) / 0.2).round().clamp(0, 4);
-    final row = ((position.y - 0.1) / 0.2).round().clamp(0, 4);
-    return '${String.fromCharCode(65 + row)}${column + 1}';
   }
 
   Widget _imageInputCard() => Card(
@@ -680,14 +785,93 @@ class _CreationPageState extends State<CreationPage> {
   }
 
   Future<void> _openPromptAssistant() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (context) => PromptAssistantPage(
-          controller: widget.promptAssistantController,
-          settingsController: widget.llmSettingsController,
-          generationController: controller,
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width >= 720
+            ? 520
+            : double.infinity,
+      ),
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.88,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '提示词助手',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '缩小为悬浮球',
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      setState(() => _assistantMinimized = true);
+                    },
+                    icon: const Icon(Icons.minimize_rounded),
+                  ),
+                  IconButton(
+                    tooltip: '全屏打开',
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (context) => PromptAssistantPage(
+                            controller: widget.promptAssistantController,
+                            settingsController: widget.llmSettingsController,
+                            generationController: controller,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.open_in_full_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: PromptAssistantPage(
+                controller: widget.promptAssistantController,
+                settingsController: widget.llmSettingsController,
+                generationController: controller,
+                embedded: true,
+                onApplied: () => Navigator.pop(sheetContext),
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  String _officialSizeValue() {
+    final value = '${controller.width}x${controller.height}';
+    return const {
+          '832x1216',
+          '1024x1024',
+          '1216x832',
+          '1024x1536',
+          '1536x1024',
+        }.contains(value)
+        ? value
+        : 'custom';
+  }
+
+  void _applyCustomSize() {
+    controller.updateCustomSize(
+      width: _customWidthController.text,
+      height: _customHeightController.text,
     );
   }
 

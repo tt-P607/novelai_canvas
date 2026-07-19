@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/errors/app_exception.dart';
 import '../../core/storage/generation_image_store.dart';
 import '../../domain/entities/tag_suggestion.dart';
 import '../../domain/repositories/image_tools_repository.dart';
@@ -92,7 +93,7 @@ class ImageToolsController extends ChangeNotifier {
         model: model,
       );
     } catch (error) {
-      errorMessage = error.toString();
+      errorMessage = _friendlyError(error);
     } finally {
       isRunning = false;
       notifyListeners();
@@ -117,7 +118,7 @@ class ImageToolsController extends ChangeNotifier {
       resultPath = stored.imagePath;
       anlasCost = result.anlasCost;
     } catch (error) {
-      errorMessage = error.toString();
+      errorMessage = _friendlyError(error);
     } finally {
       isRunning = false;
       notifyListeners();
@@ -128,6 +129,11 @@ class ImageToolsController extends ChangeNotifier {
     final path = sourceImagePath;
     if (path == null || path.isEmpty) throw StateError('请先选择源图片。');
     return path;
+  }
+
+  String _friendlyError(Object error) {
+    if (error is AppException) return error.message;
+    return error.toString().replaceFirst('Bad state: ', '');
   }
 
   String _extensionFor(String mimeType) => switch (mimeType) {

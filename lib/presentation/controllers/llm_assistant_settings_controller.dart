@@ -32,7 +32,6 @@ class LlmAssistantSettingsController extends ChangeNotifier {
     required String providerName,
     required String baseUrl,
     required String model,
-    required String visionModel,
     required String danbooruBaseUrl,
     required bool showNsfw,
     required String apiKey,
@@ -41,7 +40,7 @@ class LlmAssistantSettingsController extends ChangeNotifier {
       providerName: providerName.trim(),
       baseUrl: _normalizeBaseUrl(baseUrl),
       model: model.trim(),
-      visionModel: visionModel.trim(),
+      visionModel: model.trim(),
       danbooruBaseUrl: _normalizeOptionalBaseUrl(danbooruBaseUrl),
       showNsfw: showNsfw,
     );

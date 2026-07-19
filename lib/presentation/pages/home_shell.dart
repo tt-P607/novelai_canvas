@@ -60,6 +60,7 @@ class _HomeShellState extends State<HomeShell> {
         controller: widget.settingsController,
         credentialStore: widget.credentialStore,
         dataManagementController: widget.dataManagementController,
+        llmSettingsController: widget.llmSettingsController,
       ),
     ];
 

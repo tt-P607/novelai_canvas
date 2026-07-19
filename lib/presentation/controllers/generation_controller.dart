@@ -56,6 +56,7 @@ class GenerationController extends ChangeNotifier {
   String? sourceImagePath;
   String? maskImagePath;
   bool stream = false;
+  bool addOriginalImage = true;
   List<CharacterPrompt> characterPrompts = const [];
   List<VibeReference> vibeReferences = const [];
   List<CharacterReference> characterReferences = const [];
@@ -95,9 +96,16 @@ class GenerationController extends ChangeNotifier {
   }
 
   void updateSize({required int width, required int height}) {
-    this.width = width;
-    this.height = height;
+    this.width = width.clamp(64, 1600);
+    this.height = height.clamp(64, 1600);
     notifyListeners();
+  }
+
+  void updateCustomSize({required String width, required String height}) {
+    final parsedWidth = int.tryParse(width);
+    final parsedHeight = int.tryParse(height);
+    if (parsedWidth == null || parsedHeight == null) return;
+    updateSize(width: _align64(parsedWidth), height: _align64(parsedHeight));
   }
 
   void updateSteps(double value) {
@@ -141,6 +149,11 @@ class GenerationController extends ChangeNotifier {
 
   void updateStream(bool value) {
     stream = value;
+    notifyListeners();
+  }
+
+  void updateAddOriginalImage(bool value) {
+    addOriginalImage = value;
     notifyListeners();
   }
 
@@ -228,12 +241,13 @@ class GenerationController extends ChangeNotifier {
   Future<GenerationTask> submit() async {
     final validation = validate();
     if (validation != null) throw StateError(validation);
+    final backendMode = _backendModeProvider();
     final now = DateTime.now().toUtc();
     final task = GenerationTask(
       id: _uuid.v4(),
       spec: GenerationSpec(
         mode: mode,
-        backendMode: _backendModeProvider(),
+        backendMode: backendMode,
         model: model.trim(),
         prompt: prompt.trim(),
         negativePrompt: negativePrompt.trim(),
@@ -250,7 +264,8 @@ class GenerationController extends ChangeNotifier {
         maskImagePath: maskImagePath,
         strength: strength,
         noise: noise,
-        stream: stream,
+        addOriginalImage: mode == GenerationMode.inpaint && addOriginalImage,
+        stream: stream && backendMode == BackendMode.native,
         characterPrompts: characterPrompts,
         vibeReferences: vibeReferences,
         characterReferences: characterReferences,
@@ -292,7 +307,10 @@ class GenerationController extends ChangeNotifier {
     maskImagePath = spec.maskImagePath;
     strength = spec.strength;
     noise = spec.noise;
-    stream = spec.stream;
+    addOriginalImage = spec.mode == GenerationMode.inpaint
+        ? spec.addOriginalImage
+        : true;
+    stream = spec.stream && spec.backendMode == BackendMode.native;
     characterPrompts = spec.characterPrompts;
     vibeReferences = spec.vibeReferences;
     characterReferences = spec.characterReferences;
@@ -300,6 +318,9 @@ class GenerationController extends ChangeNotifier {
     normalizeReferenceStrength = spec.normalizeReferenceStrength;
     notifyListeners();
   }
+
+  int _align64(int value) =>
+      ((value.clamp(64, 1600) + 32) ~/ 64 * 64).clamp(64, 1600);
 
   @override
   void dispose() {

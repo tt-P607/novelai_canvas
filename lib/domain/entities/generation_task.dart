@@ -39,7 +39,7 @@ class GenerationSpec extends Equatable {
     this.maskImagePath,
     this.strength = 0.7,
     this.noise = 0,
-    this.addOriginalImage = false,
+    this.addOriginalImage = true,
     this.stream = false,
     this.characterPrompts = const [],
     this.vibeReferences = const [],
@@ -141,7 +141,7 @@ class GenerationSpec extends Equatable {
     maskImagePath: json['maskImagePath']?.toString(),
     strength: (json['strength'] as num?)?.toDouble() ?? 0.7,
     noise: (json['noise'] as num?)?.toDouble() ?? 0,
-    addOriginalImage: json['addOriginalImage'] == true,
+    addOriginalImage: json['addOriginalImage'] != false,
     stream: json['stream'] == true,
     characterPrompts: _jsonObjectList(
       json['characterPrompts'],

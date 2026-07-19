@@ -41,12 +41,18 @@ class NativeDirectorRequestBuilder
   JsonMap build(
     NativeDirectorRequestDto request, {
     List<JsonMap> patches = const [],
-  }) => applyRequestPatches({
-    'req_type': request.tool.requestType,
-    'image': request.image,
-    'width': request.width,
-    'height': request.height,
-    'prompt': request.prompt,
-    'defry': request.defry,
-  }, patches);
+  }) {
+    final needsGuidance = {
+      NativeDirectorTool.colorize,
+      NativeDirectorTool.emotion,
+    }.contains(request.tool);
+    return applyRequestPatches({
+      'req_type': request.tool.requestType,
+      'image': request.image,
+      'width': request.width,
+      'height': request.height,
+      if (needsGuidance) 'prompt': request.prompt,
+      if (needsGuidance) 'defry': request.defry,
+    }, patches);
+  }
 }

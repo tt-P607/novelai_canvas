@@ -95,14 +95,13 @@ class GenerationRepositoryImpl implements GenerationRepository {
 
   @override
   Stream<GenerationPreview> stream(GenerationTask task) async* {
-    if (task.spec.backendMode != BackendMode.native ||
-        task.spec.mode != GenerationMode.textToImage) {
-      throw const UnsupportedFeatureException('只有 NovelAI 原生文生图支持中间预览流。');
+    if (task.spec.backendMode != BackendMode.native) {
+      throw const UnsupportedFeatureException('渐进式中间预览仅支持 NovelAI 原生后端。');
     }
     final cancelToken = _createCancelToken(task.id);
     try {
       final request = NativeStreamRequestDto(
-        await _nativeTextRequest(task.spec),
+        await _nativeRequestPayload(task.spec, cancelToken: cancelToken),
       );
       await for (final event in _nativeStreamService.generate(
         request,
@@ -224,6 +223,45 @@ class GenerationRepositoryImpl implements GenerationRepository {
           responseFormat: 'b64_json',
         ),
         cancelToken: cancelToken,
+      ),
+    };
+  }
+
+  Future<Map<String, Object?>> _nativeRequestPayload(
+    GenerationSpec spec, {
+    CancelToken? cancelToken,
+  }) async {
+    final parameters = await _nativeParameters(spec, cancelToken: cancelToken);
+    return switch (spec.mode) {
+      GenerationMode.textToImage =>
+        const NativeTextToImageRequestBuilder().build(
+          NativeTextToImageRequestDto(
+            prompt: spec.prompt,
+            model: spec.model,
+            parameters: parameters,
+          ),
+        ),
+      GenerationMode.imageToImage =>
+        const NativeImageToImageRequestBuilder().build(
+          NativeImageToImageRequestDto(
+            prompt: spec.prompt,
+            model: spec.model,
+            parameters: parameters,
+            image: await _readBase64(spec.sourceImagePath, '图生图源图片'),
+            strength: spec.strength,
+            noise: spec.noise,
+          ),
+        ),
+      GenerationMode.inpaint => const NativeInpaintRequestBuilder().build(
+        NativeInpaintRequestDto(
+          prompt: spec.prompt,
+          model: spec.model,
+          parameters: parameters,
+          image: await _readBase64(spec.sourceImagePath, '局部重绘源图片'),
+          mask: await _readBase64(spec.maskImagePath, '局部重绘蒙版'),
+          strength: spec.strength,
+          noise: spec.noise,
+        ),
       ),
     };
   }

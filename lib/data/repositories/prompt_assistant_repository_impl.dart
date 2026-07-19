@@ -116,15 +116,17 @@ class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
     required String instruction,
     required LlmAssistantSettings settings,
   }) async {
-    if (settings.visionModel.trim().isEmpty) {
-      throw const ConfigurationException('请先配置支持 Vision/多模态输入的模型。普通文本模型不能识图。');
+    if (settings.model.trim().isEmpty) {
+      throw const ConfigurationException(
+        '请先配置模型；使用识图时该模型必须支持 image_url 多模态输入。',
+      );
     }
     final bytes = await File(imagePath).readAsBytes();
     final extension = imagePath.split('.').last.toLowerCase();
     final mime = extension == 'png' ? 'image/png' : 'image/jpeg';
     final reply = await _complete(
       settings: settings,
-      model: settings.visionModel,
+      model: settings.model,
       messages: [
         {'role': 'system', 'content': settings.prompts.visionAnalysis},
         {

@@ -234,9 +234,10 @@ class _MaskOverlayPainter extends CustomPainter {
     for (final stroke in [...strokes, ?activeStroke]) {
       if (stroke.points.isEmpty) continue;
       final paint = Paint()
+        // 使用不透明预览色，避免分多笔涂抹时透明度叠加造成“重叠变深”。
         ..color = stroke.eraser
-            ? Colors.black.withValues(alpha: 0.65)
-            : Colors.redAccent.withValues(alpha: 0.55)
+            ? const Color(0xFF19171F)
+            : const Color(0xFFE45C68)
         ..strokeWidth = stroke.normalizedWidth * size.shortestSide
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round

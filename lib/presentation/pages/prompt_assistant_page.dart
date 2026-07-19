@@ -7,7 +7,6 @@ import '../../domain/entities/prompt_assistant.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
 import '../controllers/prompt_assistant_controller.dart';
-import 'llm_assistant_settings_page.dart';
 
 class PromptAssistantPage extends StatefulWidget {
   const PromptAssistantPage({
@@ -15,11 +14,15 @@ class PromptAssistantPage extends StatefulWidget {
     required this.controller,
     required this.settingsController,
     required this.generationController,
+    this.embedded = false,
+    this.onApplied,
   });
 
   final PromptAssistantController controller;
   final LlmAssistantSettingsController settingsController;
   final GenerationController generationController;
+  final bool embedded;
+  final VoidCallback? onApplied;
 
   @override
   State<PromptAssistantPage> createState() => _PromptAssistantPageState();
@@ -50,18 +53,8 @@ class _PromptAssistantPageState extends State<PromptAssistantPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('提示词助手'),
-      actions: [
-        IconButton(
-          tooltip: '助手设置',
-          onPressed: _openSettings,
-          icon: const Icon(Icons.tune_rounded),
-        ),
-      ],
-    ),
-    body: SafeArea(
+  Widget build(BuildContext context) {
+    final content = SafeArea(
       child: ListenableBuilder(
         listenable: widget.controller,
         builder: (context, _) => ListView(
@@ -170,8 +163,13 @@ class _PromptAssistantPageState extends State<PromptAssistantPage> {
           ],
         ),
       ),
-    ),
-  );
+    );
+    if (widget.embedded) return content;
+    return Scaffold(
+      appBar: AppBar(title: const Text('提示词助手')),
+      body: content,
+    );
+  }
 
   Widget _keywordCard(ExtractedKeywords value) => Card(
     child: Padding(
@@ -285,16 +283,6 @@ class _PromptAssistantPageState extends State<PromptAssistantPage> {
     if (image != null) widget.controller.setImagePath(image.path);
   }
 
-  Future<void> _openSettings() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (context) =>
-            LlmAssistantSettingsPage(controller: widget.settingsController),
-      ),
-    );
-    if (mounted) setState(() {});
-  }
-
   Future<void> _generate() => widget.controller.generate(
     currentPositive: widget.generationController.prompt,
     currentNegative: widget.generationController.negativePrompt,
@@ -303,7 +291,12 @@ class _PromptAssistantPageState extends State<PromptAssistantPage> {
   void _apply() {
     final result = widget.controller.result!;
     widget.generationController.applyAssistantResult(result);
-    Navigator.of(context).pop();
+    final callback = widget.onApplied;
+    if (callback != null) {
+      callback();
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   void _showTag(DanbooruTag tag) {

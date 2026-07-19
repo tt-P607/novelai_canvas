@@ -7,6 +7,7 @@ import 'package:novelai_canvas/core/network/image_response_decoder.dart';
 import 'package:novelai_canvas/data/api/gateway/dto/gateway_chat_request_dto.dart';
 import 'package:novelai_canvas/data/api/gateway/dto/gateway_director_request_dto.dart';
 import 'package:novelai_canvas/data/api/gateway/dto/gateway_edits_request_dto.dart';
+import 'package:novelai_canvas/data/api/native/dto/native_director_request_dto.dart';
 import 'package:novelai_canvas/data/api/gateway/dto/gateway_inpaint_request_dto.dart';
 import 'package:novelai_canvas/data/api/native/dto/native_stream_dto.dart';
 
@@ -87,5 +88,51 @@ void main() {
       GatewayDirectorTool.backgroundRemoval.path,
       '/v1/images/director-bg-remover',
     );
+  });
+
+  test('原生流式构建器保留三种生成 action 并仅追加 stream 字段', () {
+    const builder = NativeStreamRequestBuilder();
+    for (final action in ['generate', 'img2img', 'infill']) {
+      final body = builder.build(
+        NativeStreamRequestDto({
+          'input': 'test',
+          'model': 'nai-diffusion-4-5-full',
+          'action': action,
+          'parameters': {'width': 832, 'height': 1216},
+        }),
+      );
+      expect(body['action'], action);
+      expect((body['parameters'] as Map)['stream'], 'sse');
+    }
+  });
+
+  test('原生导演工具仅为上色和表情发送 prompt 与 defry', () {
+    const builder = NativeDirectorRequestBuilder();
+    const commonImage = 'image';
+    final declutter = builder.build(
+      const NativeDirectorRequestDto(
+        tool: NativeDirectorTool.declutter,
+        image: commonImage,
+        width: 1024,
+        height: 1024,
+        prompt: '不应发送',
+        defry: 3,
+      ),
+    );
+    final colorize = builder.build(
+      const NativeDirectorRequestDto(
+        tool: NativeDirectorTool.colorize,
+        image: commonImage,
+        width: 1024,
+        height: 1024,
+        prompt: 'orange and blue',
+        defry: 1,
+      ),
+    );
+
+    expect(declutter.containsKey('prompt'), isFalse);
+    expect(declutter.containsKey('defry'), isFalse);
+    expect(colorize['prompt'], 'orange and blue');
+    expect(colorize['defry'], 1);
   });
 }
