@@ -180,6 +180,17 @@ flutter build apk --release
 
 ## 9. 当前产物
 
-- 本地 APK：`release/NovelAICanvas-android.apk`
-- SHA-256：`12bdb5239764bb6cdbc34e8d6fd7145756cd42d1ac58e56e685006cd3642ddb1`
-- 该 APK 是构建产物，不建议长期提交到 Git；如果仓库体积需要控制，可改由 GitHub Actions Artifact/Release 托管。
+最新 Android Release APK 已复制到便于取用的位置：
+
+- 工作区路径：`novelai_canvas/release/NovelAICanvas-android.apk`
+- Windows 绝对路径：`E:\novelai_iOS\novelai_canvas\release\NovelAICanvas-android.apk`
+- Flutter 原始产物：`novelai_canvas/build/app/outputs/flutter-apk/app-release.apk`
+- 大小：58,516,349 字节，约 55.8 MB
+- SHA-256：`aeb4c22e4e44b6856a0e4002e533a410c6fe15b01cac62d3e23b0a1f6f486b77`
+- 对应功能提交：`ae2213a fix: 修正生成交互与工具请求`
+
+该 APK 是本地构建产物，`release/` 已被 Git 忽略，不会推送到仓库。
+
+## 10. 后续 AI 完整操作手册
+
+后续模型开始开发、验证、提交、Android 构建或 Codemagic iOS 构建前，必须先阅读 `docs/ai-development-workflow.md`。该文档包含完整恢复流程、架构红线、构建命令、产物校验、Codemagic 操作和已知失败方案。
