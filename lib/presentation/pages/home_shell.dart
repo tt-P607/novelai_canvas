@@ -5,6 +5,8 @@ import '../controllers/app_settings_controller.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/history_controller.dart';
 import '../controllers/image_tools_controller.dart';
+import '../controllers/llm_assistant_settings_controller.dart';
+import '../controllers/prompt_assistant_controller.dart';
 import 'creation_page.dart';
 import 'history_page.dart';
 import 'image_tools_page.dart';
@@ -18,6 +20,8 @@ class HomeShell extends StatefulWidget {
     required this.generationController,
     required this.historyController,
     required this.imageToolsController,
+    required this.promptAssistantController,
+    required this.llmSettingsController,
   });
 
   final AppSettingsController settingsController;
@@ -25,6 +29,8 @@ class HomeShell extends StatefulWidget {
   final GenerationController generationController;
   final HistoryController historyController;
   final ImageToolsController imageToolsController;
+  final PromptAssistantController promptAssistantController;
+  final LlmAssistantSettingsController llmSettingsController;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -36,7 +42,11 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      CreationPage(controller: widget.generationController),
+      CreationPage(
+        controller: widget.generationController,
+        promptAssistantController: widget.promptAssistantController,
+        llmSettingsController: widget.llmSettingsController,
+      ),
       HistoryPage(
         controller: widget.historyController,
         generationController: widget.generationController,

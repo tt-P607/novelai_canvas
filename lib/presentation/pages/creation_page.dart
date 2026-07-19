@@ -7,12 +7,22 @@ import 'package:image_picker/image_picker.dart';
 import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
+import '../controllers/llm_assistant_settings_controller.dart';
+import '../controllers/prompt_assistant_controller.dart';
 import 'mask_editor_page.dart';
+import 'prompt_assistant_page.dart';
 
 class CreationPage extends StatefulWidget {
-  const CreationPage({super.key, required this.controller});
+  const CreationPage({
+    super.key,
+    required this.controller,
+    required this.promptAssistantController,
+    required this.llmSettingsController,
+  });
 
   final GenerationController controller;
+  final PromptAssistantController promptAssistantController;
+  final LlmAssistantSettingsController llmSettingsController;
 
   @override
   State<CreationPage> createState() => _CreationPageState();
@@ -73,6 +83,11 @@ class _CreationPageState extends State<CreationPage> {
             SliverAppBar.large(
               title: const Text('创作'),
               actions: [
+                IconButton(
+                  tooltip: '提示词助手',
+                  onPressed: _openPromptAssistant,
+                  icon: const Icon(Icons.auto_fix_high_rounded),
+                ),
                 Padding(
                   padding: const EdgeInsets.only(right: 16),
                   child: Chip(
@@ -662,6 +677,18 @@ class _CreationPageState extends State<CreationPage> {
       ),
     );
     if (maskPath != null) controller.setMaskImage(maskPath);
+  }
+
+  Future<void> _openPromptAssistant() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => PromptAssistantPage(
+          controller: widget.promptAssistantController,
+          settingsController: widget.llmSettingsController,
+          generationController: controller,
+        ),
+      ),
+    );
   }
 
   Future<void> _submit() async {

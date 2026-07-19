@@ -8,6 +8,7 @@ import '../../core/network/backend_mode.dart';
 import '../../core/queue/generation_queue.dart';
 import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/generation_task.dart';
+import '../../domain/entities/prompt_assistant.dart';
 import '../../domain/repositories/generation_history_repository.dart';
 
 class GenerationController extends ChangeNotifier {
@@ -66,6 +67,21 @@ class GenerationController extends ChangeNotifier {
   void updatePrompt(String value) => prompt = value;
   void updateNegativePrompt(String value) => negativePrompt = value;
   void updateModel(String value) => model = value;
+
+  void applyAssistantResult(PromptAssistantResult result) {
+    prompt = result.positive.trim();
+    negativePrompt = result.negative.trim();
+    characterPrompts = result.characters
+        .take(6)
+        .map(
+          (character) => CharacterPrompt(
+            prompt: character.prompt,
+            negativePrompt: character.negativePrompt,
+          ),
+        )
+        .toList();
+    notifyListeners();
+  }
 
   void updateMode(GenerationMode value) {
     mode = value;

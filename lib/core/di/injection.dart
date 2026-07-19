@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/api/danbooru/danbooru_service.dart';
 import '../../data/api/gateway/services/gateway_chat_service.dart';
 import '../../data/api/gateway/services/gateway_director_services.dart';
 import '../../data/api/gateway/services/gateway_edits_service.dart';
@@ -21,23 +22,31 @@ import '../../data/api/native/services/native_stream_service.dart';
 import '../../data/api/native/services/native_tag_suggestion_service.dart';
 import '../../data/api/native/services/native_text_to_image_service.dart';
 import '../../data/api/native/services/native_upscale_service.dart';
+import '../../data/api/llm/llm_chat_service.dart';
 import '../../data/api/native/services/native_user_service.dart';
 import '../../data/datasources/local/app_preferences.dart';
 import '../../data/datasources/local/generation_database.dart';
+import '../../data/datasources/local/llm_assistant_preferences.dart';
 import '../../data/repositories/app_settings_repository_impl.dart';
 import '../../data/repositories/flutter_secure_credential_store.dart';
 import '../../data/repositories/generation_history_repository_impl.dart';
 import '../../data/repositories/generation_repository_impl.dart';
 import '../../data/repositories/image_tools_repository_impl.dart';
+import '../../data/repositories/llm_assistant_settings_repository_impl.dart';
+import '../../data/repositories/prompt_assistant_repository_impl.dart';
 import '../../domain/repositories/app_settings_repository.dart';
 import '../../domain/repositories/generation_history_repository.dart';
 import '../../domain/repositories/generation_repository.dart';
 import '../../domain/repositories/image_tools_repository.dart';
+import '../../domain/repositories/llm_assistant_settings_repository.dart';
+import '../../domain/repositories/prompt_assistant_repository.dart';
 import '../../domain/repositories/secure_credential_store.dart';
 import '../../presentation/controllers/app_settings_controller.dart';
 import '../../presentation/controllers/generation_controller.dart';
 import '../../presentation/controllers/history_controller.dart';
 import '../../presentation/controllers/image_tools_controller.dart';
+import '../../presentation/controllers/llm_assistant_settings_controller.dart';
+import '../../presentation/controllers/prompt_assistant_controller.dart';
 import '../constants/app_constants.dart';
 import '../network/api_inspector.dart';
 import '../network/api_mode_router.dart';
@@ -60,6 +69,9 @@ Future<void> configureDependencies() async {
   final sharedPreferences = await SharedPreferences.getInstance();
   getIt.registerSingleton<SharedPreferences>(sharedPreferences);
   getIt.registerLazySingleton<AppPreferences>(() => AppPreferences(getIt()));
+  getIt.registerLazySingleton<LlmAssistantPreferences>(
+    () => LlmAssistantPreferences(getIt()),
+  );
 
   const secureStorage = FlutterSecureStorage(
     aOptions: AndroidOptions(),
@@ -76,6 +88,18 @@ Future<void> configureDependencies() async {
   final settings = await getIt<AppSettingsRepository>().load();
   getIt.registerSingleton<AppSettingsController>(
     AppSettingsController(getIt(), settings),
+  );
+
+  getIt.registerLazySingleton<LlmAssistantSettingsRepository>(
+    () => LlmAssistantSettingsRepositoryImpl(getIt()),
+  );
+  final llmSettings = await getIt<LlmAssistantSettingsRepository>().load();
+  getIt.registerSingleton<LlmAssistantSettingsController>(
+    LlmAssistantSettingsController(
+      repository: getIt(),
+      credentialStore: getIt(),
+      initialSettings: llmSettings,
+    ),
   );
 
   getIt.registerLazySingleton(GenerationDatabase.new);
@@ -121,6 +145,8 @@ Future<void> configureDependencies() async {
   final nativeDio = getIt<Dio>(instanceName: ServiceNames.nativeDio);
   final gatewayDio = getIt<Dio>(instanceName: ServiceNames.gatewayDio);
   getIt.registerLazySingleton(() => BackendConnectionService(getIt()));
+  getIt.registerLazySingleton(() => LlmChatService(Dio()));
+  getIt.registerLazySingleton(() => DanbooruService(Dio()));
 
   getIt.registerLazySingleton(() => NativeTextToImageService(nativeDio));
   getIt.registerLazySingleton(() => NativeImageToImageService(nativeDio));
@@ -182,6 +208,13 @@ Future<void> configureDependencies() async {
       gatewayEmotionService: getIt(),
     ),
   );
+  getIt.registerLazySingleton<PromptAssistantRepository>(
+    () => PromptAssistantRepositoryImpl(
+      llmService: getIt(),
+      danbooruService: getIt(),
+      credentialStore: getIt(),
+    ),
+  );
   getIt.registerLazySingleton(
     () => GenerationQueue(
       generationRepository: getIt(),
@@ -203,6 +236,12 @@ Future<void> configureDependencies() async {
   );
   getIt.registerLazySingleton(
     () => ImageToolsController(repository: getIt(), imageStore: getIt()),
+  );
+  getIt.registerLazySingleton(
+    () => PromptAssistantController(
+      repository: getIt(),
+      settingsController: getIt(),
+    ),
   );
   await getIt<HistoryController>().load();
 }

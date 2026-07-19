@@ -8,6 +8,8 @@ import 'presentation/controllers/app_settings_controller.dart';
 import 'presentation/controllers/generation_controller.dart';
 import 'presentation/controllers/history_controller.dart';
 import 'presentation/controllers/image_tools_controller.dart';
+import 'presentation/controllers/llm_assistant_settings_controller.dart';
+import 'presentation/controllers/prompt_assistant_controller.dart';
 import 'presentation/pages/home_shell.dart';
 import 'presentation/pages/onboarding_page.dart';
 
@@ -37,6 +39,9 @@ class NovelAiCanvasApp extends StatelessWidget {
                   generationController: getIt<GenerationController>(),
                   historyController: getIt<HistoryController>(),
                   imageToolsController: getIt<ImageToolsController>(),
+                  promptAssistantController: getIt<PromptAssistantController>(),
+                  llmSettingsController:
+                      getIt<LlmAssistantSettingsController>(),
                 )
               : OnboardingPage(controller: settingsController),
         );
