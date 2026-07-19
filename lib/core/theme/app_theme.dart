@@ -15,7 +15,7 @@ abstract final class AppTheme {
       brightness: Brightness.dark,
       colorScheme: scheme,
       scaffoldBackgroundColor: const Color(0xFF0C0B10),
-      visualDensity: VisualDensity.compact,
+      visualDensity: VisualDensity.standard,
       cardTheme: CardThemeData(
         color: scheme.surfaceContainerLow,
         elevation: 0,
@@ -29,10 +29,10 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        isDense: true,
+        isDense: false,
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 13,
+          horizontal: 16,
+          vertical: 15,
         ),
         fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
         border: OutlineInputBorder(
@@ -50,8 +50,8 @@ abstract final class AppTheme {
       ),
       appBarTheme: const AppBarTheme(titleSpacing: 16, toolbarHeight: 56),
       listTileTheme: const ListTileThemeData(
-        minTileHeight: 54,
-        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        minTileHeight: 58,
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: 68,

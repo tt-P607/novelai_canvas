@@ -66,6 +66,7 @@ class GenerationQueue {
   DateTime? _cooldownUntil;
   List<int>? _previewImageBytes;
   int? _previewStep;
+  DateTime? _lastPreviewEmission;
   bool _isProcessing = false;
   bool _disposed = false;
 
@@ -181,6 +182,7 @@ class GenerationQueue {
     _activeTask = running;
     _previewImageBytes = null;
     _previewStep = null;
+    _lastPreviewEmission = null;
     await _historyRepository.update(running);
     _taskController.add(running);
     _emitState();
@@ -247,10 +249,18 @@ class GenerationQueue {
   Future<GenerationExecutionResult> _executeStream(GenerationTask task) async {
     List<int>? finalBytes;
     await for (final preview in _generationRepository.stream(task)) {
+      if (preview.isFinal) finalBytes = preview.imageBytes;
+      final now = DateTime.now();
+      final shouldEmit =
+          preview.isFinal ||
+          _lastPreviewEmission == null ||
+          now.difference(_lastPreviewEmission!) >=
+              const Duration(milliseconds: 650);
+      if (!shouldEmit) continue;
       _previewImageBytes = preview.imageBytes;
       _previewStep = preview.step;
+      _lastPreviewEmission = now;
       _emitState();
-      if (preview.isFinal) finalBytes = preview.imageBytes;
     }
     if (finalBytes == null) {
       throw const DataParsingException('流式生成结束但没有返回最终图片。');

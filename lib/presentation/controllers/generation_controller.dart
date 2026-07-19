@@ -27,6 +27,10 @@ class GenerationController extends ChangeNotifier {
     });
     _taskSubscription = _queue.tasks.listen((task) {
       latestTask = task;
+      if (task.status == GenerationTaskStatus.completed &&
+          task.imagePath != null) {
+        latestImagePath = task.imagePath;
+      }
       notifyListeners();
     });
   }
@@ -63,6 +67,7 @@ class GenerationController extends ChangeNotifier {
   double controlnetStrength = 1;
   bool normalizeReferenceStrength = false;
   GenerationTask? latestTask;
+  String? latestImagePath;
   GenerationQueueState queueState = const GenerationQueueState.idle();
 
   void updatePrompt(String value) => prompt = value;
