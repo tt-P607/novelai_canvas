@@ -12,6 +12,10 @@ abstract interface class GenerationHistoryRepository {
   });
   Future<List<GenerationTask>> pendingTasks();
   Future<void> markRunningAsInterrupted();
+  Future<void> importAll(
+    Iterable<GenerationTask> tasks, {
+    bool replaceExisting = false,
+  });
   Future<void> delete(String id);
   Future<void> clear();
   Future<GenerationTask> toggleFavorite(String id);

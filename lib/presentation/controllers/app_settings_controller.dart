@@ -25,6 +25,12 @@ class AppSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> applyImportedSettings(AppSettings settings) async {
+    _settings = settings.copyWith(onboardingCompleted: true);
+    await _repository.save(_settings);
+    notifyListeners();
+  }
+
   Future<void> updateBackend({
     required BackendMode backendMode,
     required String gatewayBaseUrl,

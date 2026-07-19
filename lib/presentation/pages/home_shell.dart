@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/repositories/secure_credential_store.dart';
 import '../controllers/app_settings_controller.dart';
+import '../controllers/data_management_controller.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/history_controller.dart';
 import '../controllers/image_tools_controller.dart';
@@ -22,6 +23,7 @@ class HomeShell extends StatefulWidget {
     required this.imageToolsController,
     required this.promptAssistantController,
     required this.llmSettingsController,
+    required this.dataManagementController,
   });
 
   final AppSettingsController settingsController;
@@ -31,6 +33,7 @@ class HomeShell extends StatefulWidget {
   final ImageToolsController imageToolsController;
   final PromptAssistantController promptAssistantController;
   final LlmAssistantSettingsController llmSettingsController;
+  final DataManagementController dataManagementController;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -56,6 +59,7 @@ class _HomeShellState extends State<HomeShell> {
       SettingsPage(
         controller: widget.settingsController,
         credentialStore: widget.credentialStore,
+        dataManagementController: widget.dataManagementController,
       ),
     ];
 

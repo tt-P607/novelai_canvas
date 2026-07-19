@@ -170,6 +170,18 @@ class _MemoryHistoryRepository implements GenerationHistoryRepository {
   Future<void> markRunningAsInterrupted() async {}
 
   @override
+  Future<void> importAll(
+    Iterable<GenerationTask> tasks, {
+    bool replaceExisting = false,
+  }) async {
+    for (final task in tasks) {
+      if (replaceExisting || !items.containsKey(task.id)) {
+        items[task.id] = task;
+      }
+    }
+  }
+
+  @override
   Future<List<GenerationTask>> pendingTasks() async => items.values
       .where(
         (task) =>

@@ -5,6 +5,7 @@ import 'core/di/injection.dart';
 import 'core/theme/app_theme.dart';
 import 'domain/repositories/secure_credential_store.dart';
 import 'presentation/controllers/app_settings_controller.dart';
+import 'presentation/controllers/data_management_controller.dart';
 import 'presentation/controllers/generation_controller.dart';
 import 'presentation/controllers/history_controller.dart';
 import 'presentation/controllers/image_tools_controller.dart';
@@ -42,6 +43,7 @@ class NovelAiCanvasApp extends StatelessWidget {
                   promptAssistantController: getIt<PromptAssistantController>(),
                   llmSettingsController:
                       getIt<LlmAssistantSettingsController>(),
+                  dataManagementController: getIt<DataManagementController>(),
                 )
               : OnboardingPage(controller: settingsController),
         );

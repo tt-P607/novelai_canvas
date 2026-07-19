@@ -20,6 +20,21 @@ class AppSettings extends Equatable {
   final BackendMode backendMode;
   final String gatewayBaseUrl;
 
+  Map<String, Object?> toJson() => {
+    'onboarding_completed': onboardingCompleted,
+    'backend_mode': backendMode.name,
+    'gateway_base_url': gatewayBaseUrl,
+  };
+
+  factory AppSettings.fromJson(Map<String, Object?> json) => AppSettings(
+    onboardingCompleted: json['onboarding_completed'] == true,
+    backendMode: BackendMode.values.firstWhere(
+      (mode) => mode.name == json['backend_mode']?.toString(),
+      orElse: () => BackendMode.native,
+    ),
+    gatewayBaseUrl: json['gateway_base_url']?.toString() ?? '',
+  );
+
   EndpointProfile get activeEndpoint => switch (backendMode) {
     BackendMode.native => const EndpointProfile(
       mode: BackendMode.native,

@@ -42,11 +42,13 @@ import '../../domain/repositories/llm_assistant_settings_repository.dart';
 import '../../domain/repositories/prompt_assistant_repository.dart';
 import '../../domain/repositories/secure_credential_store.dart';
 import '../../presentation/controllers/app_settings_controller.dart';
+import '../../presentation/controllers/data_management_controller.dart';
 import '../../presentation/controllers/generation_controller.dart';
 import '../../presentation/controllers/history_controller.dart';
 import '../../presentation/controllers/image_tools_controller.dart';
 import '../../presentation/controllers/llm_assistant_settings_controller.dart';
 import '../../presentation/controllers/prompt_assistant_controller.dart';
+import '../backup/app_backup_service.dart';
 import '../constants/app_constants.dart';
 import '../network/api_inspector.dart';
 import '../network/api_mode_router.dart';
@@ -236,6 +238,22 @@ Future<void> configureDependencies() async {
   );
   getIt.registerLazySingleton(
     () => ImageToolsController(repository: getIt(), imageStore: getIt()),
+  );
+  getIt.registerLazySingleton(
+    () => AppBackupService(
+      appSettingsRepository: getIt(),
+      llmSettingsRepository: getIt(),
+      historyRepository: getIt(),
+    ),
+  );
+  getIt.registerLazySingleton(
+    () => DataManagementController(
+      backupService: getIt(),
+      credentialStore: getIt(),
+      appSettingsController: getIt(),
+      llmSettingsController: getIt(),
+      historyController: getIt(),
+    ),
   );
   getIt.registerLazySingleton(
     () => PromptAssistantController(

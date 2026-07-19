@@ -19,6 +19,12 @@ class LlmAssistantSettingsController extends ChangeNotifier {
 
   LlmAssistantSettings settings;
 
+  Future<void> applyImportedSettings(LlmAssistantSettings imported) async {
+    settings = imported;
+    await _repository.save(settings);
+    notifyListeners();
+  }
+
   Future<String> loadApiKey() async =>
       await _credentialStore.read(AppConstants.llmCredentialKey) ?? '';
 

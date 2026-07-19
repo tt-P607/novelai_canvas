@@ -229,6 +229,44 @@ class GenerationTask extends Equatable {
     favorite: favorite ?? this.favorite,
   );
 
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'spec': spec.toJson(),
+    'status': status.name,
+    'created_at': createdAt.toUtc().toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+    'image_path': imagePath,
+    'thumbnail_path': thumbnailPath,
+    'error_message': errorMessage,
+    'anlas_cost': anlasCost,
+    'retry_count': retryCount,
+    'favorite': favorite,
+  };
+
+  factory GenerationTask.fromJson(Map<String, Object?> json) {
+    final specJson = json['spec'];
+    if (specJson is! Map) {
+      throw const FormatException('生成任务缺少有效的 spec 对象。');
+    }
+    return GenerationTask(
+      id: json['id']?.toString() ?? '',
+      spec: GenerationSpec.fromJson(Map<String, Object?>.from(specJson)),
+      status: _enumByName(
+        GenerationTaskStatus.values,
+        json['status']?.toString(),
+        GenerationTaskStatus.interrupted,
+      ),
+      createdAt: _dateTimeFromJson(json['created_at']),
+      updatedAt: _dateTimeFromJson(json['updated_at']),
+      imagePath: json['image_path']?.toString(),
+      thumbnailPath: json['thumbnail_path']?.toString(),
+      errorMessage: json['error_message']?.toString(),
+      anlasCost: (json['anlas_cost'] as num?)?.toInt(),
+      retryCount: (json['retry_count'] as num?)?.toInt() ?? 0,
+      favorite: json['favorite'] == true,
+    );
+  }
+
   @override
   List<Object?> get props => [
     id,
@@ -251,6 +289,12 @@ List<Map<String, Object?>> _jsonObjectList(Object? value) {
       .whereType<Map>()
       .map((item) => Map<String, Object?>.from(item))
       .toList();
+}
+
+DateTime _dateTimeFromJson(Object? value) {
+  final parsed = DateTime.tryParse(value?.toString() ?? '');
+  return (parsed ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true))
+      .toUtc();
 }
 
 T _enumByName<T extends Enum>(List<T> values, String? name, T fallback) {

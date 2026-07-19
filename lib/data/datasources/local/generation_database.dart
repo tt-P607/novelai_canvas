@@ -6,7 +6,7 @@ import '../../models/generation_task_model.dart';
 class GenerationDatabase {
   GenerationDatabase({this.factory, this.databasePath});
 
-  static const schemaVersion = 1;
+  static const schemaVersion = 2;
   static const fileName = 'novelai_canvas.db';
 
   final DatabaseFactory? factory;
@@ -76,6 +76,30 @@ class GenerationDatabase {
     int oldVersion,
     int newVersion,
   ) async {
-    // 首版 schema 已保留显式迁移入口，后续只追加顺序迁移。
+    if (oldVersion < 2) {
+      await _ensureColumn(
+        db,
+        table: GenerationTaskColumns.table,
+        column: GenerationTaskColumns.favorite,
+        definition: 'INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_generation_tasks_favorite
+        ON ${GenerationTaskColumns.table} (${GenerationTaskColumns.favorite})
+      ''');
+    }
+  }
+
+  static Future<void> _ensureColumn(
+    Database db, {
+    required String table,
+    required String column,
+    required String definition,
+  }) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    final exists = columns.any((row) => row['name']?.toString() == column);
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
   }
 }

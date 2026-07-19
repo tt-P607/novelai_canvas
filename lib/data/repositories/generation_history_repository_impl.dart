@@ -117,6 +117,27 @@ class GenerationHistoryRepositoryImpl implements GenerationHistoryRepository {
   }
 
   @override
+  Future<void> importAll(
+    Iterable<GenerationTask> tasks, {
+    bool replaceExisting = false,
+  }) async {
+    final db = await _database.database;
+    await db.transaction((transaction) async {
+      final batch = transaction.batch();
+      for (final task in tasks) {
+        batch.insert(
+          GenerationTaskColumns.table,
+          GenerationTaskModel(task).toDatabase(),
+          conflictAlgorithm: replaceExisting
+              ? ConflictAlgorithm.replace
+              : ConflictAlgorithm.ignore,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  @override
   Future<void> delete(String id) async {
     final db = await _database.database;
     await db.delete(

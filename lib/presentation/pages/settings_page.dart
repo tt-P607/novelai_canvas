@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 
+import 'package:package_info_plus/package_info_plus.dart';
+
 import '../../core/constants/app_constants.dart';
 import '../../core/network/backend_mode.dart';
 import '../../domain/repositories/secure_credential_store.dart';
 import '../controllers/app_settings_controller.dart';
+import '../controllers/data_management_controller.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
     super.key,
     required this.controller,
     required this.credentialStore,
+    required this.dataManagementController,
   });
 
   final AppSettingsController controller;
   final SecureCredentialStore credentialStore;
+  final DataManagementController dataManagementController;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -223,6 +228,28 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          _DataManagementCard(
+            controller: widget.dataManagementController,
+            showMessage: _showMessage,
+          ),
+          const SizedBox(height: 16),
+          FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (context, snapshot) {
+              final version = snapshot.data == null
+                  ? '正在读取版本…'
+                  : '${snapshot.data!.version}+${snapshot.data!.buildNumber}';
+              return Card(
+                child: ListTile(
+                  leading: const Icon(Icons.info_outline_rounded),
+                  title: const Text(AppConstants.appName),
+                  subtitle: Text('版本 $version\n包名 com.elysia.novelaicanvas'),
+                  isThreeLine: true,
+                ),
+              );
+            },
+          ),
           const SizedBox(height: 22),
           FilledButton.icon(
             onPressed: _saving || _loadingSecrets ? null : _save,
@@ -241,4 +268,117 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
+}
+
+class _DataManagementCard extends StatelessWidget {
+  const _DataManagementCard({
+    required this.controller,
+    required this.showMessage,
+  });
+
+  final DataManagementController controller;
+  final ValueChanged<String> showMessage;
+
+  Future<bool> _confirm(
+    BuildContext context, {
+    required String title,
+    required String content,
+  }) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('确认'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) => Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('数据与备份', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            const Text('备份包含非敏感设置、四套 Prompt 和生成历史参数；不会导出任何 API Key 或 Token。'),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: controller.busy
+                  ? null
+                  : () async {
+                      final path = await controller.exportBackup();
+                      if (path != null) showMessage('备份已保存到：$path');
+                      if (controller.errorMessage != null) {
+                        showMessage('导出失败：${controller.errorMessage}');
+                      }
+                    },
+              icon: const Icon(Icons.file_upload_outlined),
+              label: const Text('导出备份'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: controller.busy
+                  ? null
+                  : () async {
+                      final confirmed = await _confirm(
+                        context,
+                        title: '导入备份',
+                        content:
+                            '将恢复普通设置、LLM Prompt 和历史参数。同 ID 历史默认保留本机版本，安全凭据不会被修改。',
+                      );
+                      if (!confirmed) return;
+                      final count = await controller.importBackup();
+                      if (count != null) showMessage('已读取并导入 $count 条历史记录。');
+                      if (controller.errorMessage != null) {
+                        showMessage('导入失败：${controller.errorMessage}');
+                      }
+                    },
+              icon: const Icon(Icons.file_download_outlined),
+              label: const Text('导入备份'),
+            ),
+            const SizedBox(height: 10),
+            TextButton.icon(
+              onPressed: controller.busy
+                  ? null
+                  : () async {
+                      final confirmed = await _confirm(
+                        context,
+                        title: '清除全部安全凭据',
+                        content:
+                            '将从系统 Keychain / Keystore 删除 NovelAI Token、网关 Key 和 LLM Key。此操作不可撤销。',
+                      );
+                      if (!confirmed) return;
+                      try {
+                        await controller.clearCredentials();
+                        showMessage('全部安全凭据已清除。');
+                      } catch (_) {
+                        showMessage('清除失败：${controller.errorMessage}');
+                      }
+                    },
+              icon: const Icon(Icons.delete_forever_outlined),
+              label: const Text('清除全部安全凭据'),
+            ),
+            if (controller.busy) ...[
+              const SizedBox(height: 10),
+              const LinearProgressIndicator(),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
 }
