@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
 import 'mask_editor_page.dart';
@@ -122,6 +123,10 @@ class _CreationPageState extends State<CreationPage> {
                   ),
                   const SizedBox(height: 16),
                   _parameterCard(),
+                  if (controller.mode == GenerationMode.textToImage) ...[
+                    const SizedBox(height: 16),
+                    _advancedReferenceCard(),
+                  ],
                   if (controller.mode != GenerationMode.textToImage) ...[
                     const SizedBox(height: 16),
                     _imageInputCard(),
@@ -307,6 +312,262 @@ class _CreationPageState extends State<CreationPage> {
       ),
     ),
   );
+
+  Widget _advancedReferenceCard() => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('高级参考', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          const Text('Vibe 控制风格；角色参考仅支持原生 V4.5；多角色最多 6 个。'),
+          const Divider(height: 28),
+          Row(
+            children: [
+              const Expanded(child: Text('Vibe Transfer')),
+              TextButton.icon(
+                onPressed: _pickVibeImage,
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                label: const Text('添加'),
+              ),
+            ],
+          ),
+          ...controller.vibeReferences.indexed.map(
+            (entry) => _vibeTile(entry.$1, entry.$2),
+          ),
+          const Divider(height: 28),
+          Row(
+            children: [
+              const Expanded(child: Text('V4.5 角色参考')),
+              TextButton.icon(
+                onPressed: _pickCharacterReference,
+                icon: const Icon(Icons.person_add_alt_rounded),
+                label: const Text('添加'),
+              ),
+            ],
+          ),
+          ...controller.characterReferences.indexed.map(
+            (entry) => _characterReferenceTile(entry.$1, entry.$2),
+          ),
+          const Divider(height: 28),
+          Row(
+            children: [
+              const Expanded(child: Text('多角色与坐标')),
+              TextButton.icon(
+                onPressed: controller.characterPrompts.length >= 6
+                    ? null
+                    : controller.addCharacter,
+                icon: const Icon(Icons.group_add_outlined),
+                label: const Text('添加角色'),
+              ),
+            ],
+          ),
+          ...controller.characterPrompts.indexed.map(
+            (entry) => _characterTile(entry.$1, entry.$2),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _vibeTile(int index, VibeReference reference) => ExpansionTile(
+    leading: reference.imagePath == null
+        ? const Icon(Icons.blur_on_rounded)
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.file(
+              File(reference.imagePath!),
+              width: 44,
+              height: 44,
+              fit: BoxFit.cover,
+            ),
+          ),
+    title: Text('Vibe ${index + 1}'),
+    subtitle: Text(
+      '强度 ${reference.strength.toStringAsFixed(2)} · 提取 ${reference.informationExtracted.toStringAsFixed(2)}',
+    ),
+    trailing: IconButton(
+      onPressed: () => controller.removeVibeReference(index),
+      icon: const Icon(Icons.delete_outline),
+    ),
+    children: [
+      Text('参考强度 ${reference.strength.toStringAsFixed(2)}'),
+      Slider(
+        value: reference.strength,
+        min: 0.01,
+        max: 1,
+        divisions: 99,
+        onChanged: (value) => controller.updateVibeReference(
+          index,
+          reference.copyWith(strength: value),
+        ),
+      ),
+      Text('信息提取 ${reference.informationExtracted.toStringAsFixed(2)}'),
+      Slider(
+        value: reference.informationExtracted,
+        min: 0.01,
+        max: 1,
+        divisions: 99,
+        onChanged: (value) => controller.updateVibeReference(
+          index,
+          reference.copyWith(informationExtracted: value),
+        ),
+      ),
+    ],
+  );
+
+  Widget _characterReferenceTile(int index, CharacterReference reference) =>
+      ExpansionTile(
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.file(
+            File(reference.imagePath),
+            width: 44,
+            height: 44,
+            fit: BoxFit.cover,
+          ),
+        ),
+        title: Text('角色参考 ${index + 1} · +5A'),
+        subtitle: Text(reference.description),
+        trailing: IconButton(
+          onPressed: () => controller.removeCharacterReference(index),
+          icon: const Icon(Icons.delete_outline),
+        ),
+        children: [
+          DropdownButtonFormField<CharacterReferenceType>(
+            initialValue: reference.type,
+            decoration: const InputDecoration(labelText: '参考类型'),
+            items: const [
+              DropdownMenuItem(
+                value: CharacterReferenceType.characterAndStyle,
+                child: Text('角色与画风'),
+              ),
+              DropdownMenuItem(
+                value: CharacterReferenceType.character,
+                child: Text('仅角色'),
+              ),
+              DropdownMenuItem(
+                value: CharacterReferenceType.style,
+                child: Text('仅画风'),
+              ),
+            ],
+            onChanged: (value) => controller.updateCharacterReference(
+              index,
+              reference.copyWith(type: value),
+            ),
+          ),
+          Text('强度 ${reference.strength.toStringAsFixed(2)}'),
+          Slider(
+            value: reference.strength,
+            min: 0,
+            max: 1,
+            divisions: 20,
+            onChanged: (value) => controller.updateCharacterReference(
+              index,
+              reference.copyWith(strength: value),
+            ),
+          ),
+          Text('忠诚度 ${reference.fidelity.toStringAsFixed(2)}'),
+          Slider(
+            value: reference.fidelity,
+            min: 0,
+            max: 1,
+            divisions: 20,
+            onChanged: (value) => controller.updateCharacterReference(
+              index,
+              reference.copyWith(fidelity: value),
+            ),
+          ),
+        ],
+      );
+
+  Widget _characterTile(int index, CharacterPrompt character) => Card.outlined(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text('角色 ${index + 1}')),
+              Switch.adaptive(
+                value: character.enabled,
+                onChanged: (value) => controller.updateCharacter(
+                  index,
+                  character.copyWith(enabled: value),
+                ),
+              ),
+              IconButton(
+                onPressed: () => controller.removeCharacter(index),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ],
+          ),
+          TextFormField(
+            initialValue: character.prompt,
+            onChanged: (value) => controller.updateCharacter(
+              index,
+              character.copyWith(prompt: value),
+            ),
+            decoration: const InputDecoration(labelText: '角色正向提示词'),
+          ),
+          TextFormField(
+            initialValue: character.negativePrompt,
+            onChanged: (value) => controller.updateCharacter(
+              index,
+              character.copyWith(negativePrompt: value),
+            ),
+            decoration: const InputDecoration(labelText: '角色负向提示词'),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: _positionKey(character.position),
+            decoration: const InputDecoration(labelText: '5 × 5 角色点位'),
+            items: _characterPositions()
+                .map(
+                  (entry) =>
+                      DropdownMenuItem(value: entry.$1, child: Text(entry.$1)),
+                )
+                .toList(),
+            onChanged: (key) {
+              final position = _characterPositions()
+                  .firstWhere((entry) => entry.$1 == key)
+                  .$2;
+              controller.updateCharacter(
+                index,
+                character.copyWith(position: position),
+              );
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _pickVibeImage() async {
+    final image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) controller.addVibeReference(image.path);
+  }
+
+  Future<void> _pickCharacterReference() async {
+    final image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) controller.addCharacterReference(image.path);
+  }
+
+  List<(String, CharacterPosition)> _characterPositions() => [
+    for (var row = 0; row < 5; row++)
+      for (var column = 0; column < 5; column++)
+        (
+          '${String.fromCharCode(65 + row)}${column + 1}',
+          CharacterPosition(x: 0.1 + column * 0.2, y: 0.1 + row * 0.2),
+        ),
+  ];
+
+  String _positionKey(CharacterPosition position) {
+    final column = ((position.x - 0.1) / 0.2).round().clamp(0, 4);
+    final row = ((position.y - 0.1) / 0.2).round().clamp(0, 4);
+    return '${String.fromCharCode(65 + row)}${column + 1}';
+  }
 
   Widget _imageInputCard() => Card(
     child: Padding(

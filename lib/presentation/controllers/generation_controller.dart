@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/network/backend_mode.dart';
 import '../../core/queue/generation_queue.dart';
+import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/generation_task.dart';
 import '../../domain/repositories/generation_history_repository.dart';
 
@@ -54,6 +55,11 @@ class GenerationController extends ChangeNotifier {
   String? sourceImagePath;
   String? maskImagePath;
   bool stream = false;
+  List<CharacterPrompt> characterPrompts = const [];
+  List<VibeReference> vibeReferences = const [];
+  List<CharacterReference> characterReferences = const [];
+  double controlnetStrength = 1;
+  bool normalizeReferenceStrength = false;
   GenerationTask? latestTask;
   GenerationQueueState queueState = const GenerationQueueState.idle();
 
@@ -122,6 +128,65 @@ class GenerationController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void addCharacter() {
+    if (characterPrompts.length >= 6) return;
+    characterPrompts = [...characterPrompts, const CharacterPrompt(prompt: '')];
+    notifyListeners();
+  }
+
+  void updateCharacter(int index, CharacterPrompt value) {
+    characterPrompts = [...characterPrompts]..[index] = value;
+    notifyListeners();
+  }
+
+  void removeCharacter(int index) {
+    characterPrompts = [...characterPrompts]..removeAt(index);
+    notifyListeners();
+  }
+
+  void addVibeReference(String imagePath) {
+    vibeReferences = [...vibeReferences, VibeReference(imagePath: imagePath)];
+    notifyListeners();
+  }
+
+  void updateVibeReference(int index, VibeReference value) {
+    vibeReferences = [...vibeReferences]..[index] = value;
+    notifyListeners();
+  }
+
+  void removeVibeReference(int index) {
+    vibeReferences = [...vibeReferences]..removeAt(index);
+    notifyListeners();
+  }
+
+  void addCharacterReference(String imagePath) {
+    characterReferences = [
+      ...characterReferences,
+      CharacterReference(imagePath: imagePath),
+    ];
+    notifyListeners();
+  }
+
+  void updateCharacterReference(int index, CharacterReference value) {
+    characterReferences = [...characterReferences]..[index] = value;
+    notifyListeners();
+  }
+
+  void removeCharacterReference(int index) {
+    characterReferences = [...characterReferences]..removeAt(index);
+    notifyListeners();
+  }
+
+  void updateControlnetStrength(double value) {
+    controlnetStrength = value;
+    notifyListeners();
+  }
+
+  void updateNormalizeReferenceStrength(bool value) {
+    normalizeReferenceStrength = value;
+    notifyListeners();
+  }
+
   String? validate() {
     if (prompt.trim().isEmpty) return '请输入正向提示词。';
     if (model.trim().isEmpty) return '请输入模型名称。';
@@ -130,6 +195,16 @@ class GenerationController extends ChangeNotifier {
     }
     if (mode == GenerationMode.inpaint && maskImagePath == null) {
       return '请先绘制或选择蒙版。';
+    }
+    if (characterReferences.isNotEmpty && !model.contains('4-5')) {
+      return '角色参考仅支持 NovelAI V4.5 模型。';
+    }
+    if (characterReferences.isNotEmpty &&
+        _backendModeProvider() != BackendMode.native) {
+      return '角色参考当前仅支持 NovelAI 原生后端。';
+    }
+    if (vibeReferences.any((reference) => !reference.hasSource)) {
+      return 'Vibe 参考缺少图片或预编码数据。';
     }
     return null;
   }
@@ -160,6 +235,11 @@ class GenerationController extends ChangeNotifier {
         strength: strength,
         noise: noise,
         stream: stream,
+        characterPrompts: characterPrompts,
+        vibeReferences: vibeReferences,
+        characterReferences: characterReferences,
+        controlnetStrength: controlnetStrength,
+        normalizeReferenceStrength: normalizeReferenceStrength,
       ),
       status: GenerationTaskStatus.queued,
       createdAt: now,
@@ -197,6 +277,11 @@ class GenerationController extends ChangeNotifier {
     strength = spec.strength;
     noise = spec.noise;
     stream = spec.stream;
+    characterPrompts = spec.characterPrompts;
+    vibeReferences = spec.vibeReferences;
+    characterReferences = spec.characterReferences;
+    controlnetStrength = spec.controlnetStrength;
+    normalizeReferenceStrength = spec.normalizeReferenceStrength;
     notifyListeners();
   }
 

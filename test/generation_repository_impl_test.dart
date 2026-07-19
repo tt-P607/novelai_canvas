@@ -6,9 +6,13 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:novelai_canvas/core/network/backend_mode.dart';
+import 'package:novelai_canvas/domain/entities/advanced_generation.dart';
+import 'package:novelai_canvas/data/api/gateway/services/gateway_chat_service.dart';
 import 'package:novelai_canvas/data/api/gateway/services/gateway_generation_service.dart';
 import 'package:novelai_canvas/data/api/gateway/services/gateway_image_to_image_service.dart';
 import 'package:novelai_canvas/data/api/gateway/services/gateway_inpaint_service.dart';
+import 'package:novelai_canvas/data/api/gateway/services/gateway_vibe_transfer_service.dart';
+import 'package:novelai_canvas/data/api/native/services/native_encode_vibe_service.dart';
 import 'package:novelai_canvas/data/api/native/services/native_image_to_image_service.dart';
 import 'package:novelai_canvas/data/api/native/services/native_inpaint_service.dart';
 import 'package:novelai_canvas/data/api/native/services/native_stream_service.dart';
@@ -46,6 +50,76 @@ void main() {
 
     expect(result.images.single.bytes, [9, 8, 7]);
   });
+
+  test('高级参数快照往返保留 Vibe、角色参考和多角色坐标', () {
+    final spec = _task(BackendMode.native).spec;
+    final advanced = GenerationSpec.fromJson({
+      ...spec.toJson(),
+      'characterPrompts': [
+        const CharacterPrompt(
+          prompt: 'red hair',
+          negativePrompt: 'bad hands',
+          position: CharacterPosition(x: 0.3, y: 0.5),
+        ).toJson(),
+      ],
+      'vibeReferences': [
+        const VibeReference(
+          encodedData: 'encoded-vibe',
+          strength: 0.6,
+        ).toJson(),
+      ],
+      'characterReferences': [
+        const CharacterReference(
+          imagePath: 'reference.png',
+          type: CharacterReferenceType.character,
+        ).toJson(),
+      ],
+    });
+
+    final restored = GenerationSpec.decode(advanced.encode());
+
+    expect(restored.characterPrompts.single.position.x, 0.3);
+    expect(restored.vibeReferences.single.encodedData, 'encoded-vibe');
+    expect(
+      restored.characterReferences.single.type,
+      CharacterReferenceType.character,
+    );
+  });
+
+  test('网关多角色使用 Chat system message 契约', () async {
+    final gatewayDio = Dio()..httpClientAdapter = _GenerationAdapter();
+    final repository = _repository(
+      Dio()..httpClientAdapter = _GenerationAdapter(),
+      gatewayDio,
+      downloadDio: Dio()..httpClientAdapter = _DownloadAdapter(),
+    );
+    final base = _task(BackendMode.gateway);
+    final task = GenerationTask(
+      id: 'characters',
+      spec: GenerationSpec.fromJson({
+        ...base.spec.toJson(),
+        'characterPrompts': [
+          const CharacterPrompt(
+            prompt: 'red hair',
+            position: CharacterPosition(x: 0.3, y: 0.5),
+          ).toJson(),
+        ],
+      }),
+      status: base.status,
+      createdAt: base.createdAt,
+      updatedAt: base.updatedAt,
+    );
+
+    await repository.execute(task);
+
+    final adapter = gatewayDio.httpClientAdapter as _GenerationAdapter;
+    expect(adapter.lastPath, '/v1/chat/completions');
+    final messages = adapter.lastJson?['messages'] as List;
+    expect(
+      (messages.last as Map)['content'].toString(),
+      contains('Characters:'),
+    );
+  });
 }
 
 GenerationRepositoryImpl _repository(
@@ -57,7 +131,10 @@ GenerationRepositoryImpl _repository(
   nativeImageToImageService: NativeImageToImageService(nativeDio),
   nativeInpaintService: NativeInpaintService(nativeDio),
   nativeStreamService: NativeStreamService(nativeDio),
+  nativeEncodeVibeService: NativeEncodeVibeService(nativeDio),
   gatewayGenerationService: GatewayGenerationService(gatewayDio),
+  gatewayChatService: GatewayChatService(gatewayDio),
+  gatewayVibeTransferService: GatewayVibeTransferService(gatewayDio),
   gatewayImageToImageService: GatewayImageToImageService(gatewayDio),
   gatewayInpaintService: GatewayInpaintService(gatewayDio),
   downloadClient: downloadDio,
@@ -105,6 +182,23 @@ class _GenerationAdapter implements HttpClientAdapter {
     lastJson = options.data is Map
         ? Map<String, Object?>.from(options.data as Map)
         : null;
+    if (options.path == '/v1/chat/completions') {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'choices': [
+            {
+              'message': {
+                'content': '![result](https://cdn.example.com/character.png)',
+              },
+            },
+          ],
+        }),
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['application/json'],
+        },
+      );
+    }
     if (options.path.startsWith('/v1/')) {
       return ResponseBody.fromString(
         jsonEncode({

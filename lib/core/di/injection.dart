@@ -28,13 +28,16 @@ import '../../data/repositories/app_settings_repository_impl.dart';
 import '../../data/repositories/flutter_secure_credential_store.dart';
 import '../../data/repositories/generation_history_repository_impl.dart';
 import '../../data/repositories/generation_repository_impl.dart';
+import '../../data/repositories/image_tools_repository_impl.dart';
 import '../../domain/repositories/app_settings_repository.dart';
 import '../../domain/repositories/generation_history_repository.dart';
 import '../../domain/repositories/generation_repository.dart';
+import '../../domain/repositories/image_tools_repository.dart';
 import '../../domain/repositories/secure_credential_store.dart';
 import '../../presentation/controllers/app_settings_controller.dart';
 import '../../presentation/controllers/generation_controller.dart';
 import '../../presentation/controllers/history_controller.dart';
+import '../../presentation/controllers/image_tools_controller.dart';
 import '../constants/app_constants.dart';
 import '../network/api_inspector.dart';
 import '../network/api_mode_router.dart';
@@ -154,9 +157,29 @@ Future<void> configureDependencies() async {
       nativeImageToImageService: getIt(),
       nativeInpaintService: getIt(),
       nativeStreamService: getIt(),
+      nativeEncodeVibeService: getIt(),
       gatewayGenerationService: getIt(),
+      gatewayChatService: getIt(),
+      gatewayVibeTransferService: getIt(),
       gatewayImageToImageService: getIt(),
       gatewayInpaintService: getIt(),
+    ),
+  );
+  getIt.registerLazySingleton<ImageToolsRepository>(
+    () => ImageToolsRepositoryImpl(
+      backendModeProvider: () =>
+          getIt<AppSettingsController>().settings.backendMode,
+      nativeUpscaleService: getIt(),
+      nativeTagSuggestionService: getIt(),
+      nativeDirectorService: getIt(),
+      gatewayUpscaleService: getIt(),
+      gatewayTagSuggestionService: getIt(),
+      gatewayDeclutterService: getIt(),
+      gatewayBackgroundRemovalService: getIt(),
+      gatewayLineartService: getIt(),
+      gatewaySketchService: getIt(),
+      gatewayColorizeService: getIt(),
+      gatewayEmotionService: getIt(),
     ),
   );
   getIt.registerLazySingleton(
@@ -177,6 +200,9 @@ Future<void> configureDependencies() async {
   );
   getIt.registerLazySingleton(
     () => HistoryController(repository: getIt(), queue: getIt()),
+  );
+  getIt.registerLazySingleton(
+    () => ImageToolsController(repository: getIt(), imageStore: getIt()),
   );
   await getIt<HistoryController>().load();
 }

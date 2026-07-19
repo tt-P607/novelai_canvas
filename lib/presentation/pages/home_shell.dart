@@ -4,9 +4,10 @@ import '../../domain/repositories/secure_credential_store.dart';
 import '../controllers/app_settings_controller.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/history_controller.dart';
+import '../controllers/image_tools_controller.dart';
 import 'creation_page.dart';
 import 'history_page.dart';
-import 'placeholder_feature_page.dart';
+import 'image_tools_page.dart';
 import 'settings_page.dart';
 
 class HomeShell extends StatefulWidget {
@@ -16,12 +17,14 @@ class HomeShell extends StatefulWidget {
     required this.credentialStore,
     required this.generationController,
     required this.historyController,
+    required this.imageToolsController,
   });
 
   final AppSettingsController settingsController;
   final SecureCredentialStore credentialStore;
   final GenerationController generationController;
   final HistoryController historyController;
+  final ImageToolsController imageToolsController;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -39,12 +42,7 @@ class _HomeShellState extends State<HomeShell> {
         generationController: widget.generationController,
         onReuse: () => setState(() => _selectedIndex = 0),
       ),
-      const PlaceholderFeaturePage(
-        icon: Icons.build_circle_rounded,
-        title: '工具',
-        description: 'Vibe、角色参考、放大、标签建议与六种导演工具将在这里汇集。',
-        nextStage: '大阶段四',
-      ),
+      ImageToolsPage(controller: widget.imageToolsController),
       SettingsPage(
         controller: widget.settingsController,
         credentialStore: widget.credentialStore,

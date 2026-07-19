@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:equatable/equatable.dart';
 
 import '../../core/network/backend_mode.dart';
+import 'advanced_generation.dart';
 
 enum GenerationMode { textToImage, imageToImage, inpaint }
 
@@ -40,6 +41,11 @@ class GenerationSpec extends Equatable {
     this.noise = 0,
     this.addOriginalImage = false,
     this.stream = false,
+    this.characterPrompts = const [],
+    this.vibeReferences = const [],
+    this.characterReferences = const [],
+    this.controlnetStrength = 1,
+    this.normalizeReferenceStrength = false,
   });
 
   final GenerationMode mode;
@@ -64,6 +70,11 @@ class GenerationSpec extends Equatable {
   final double noise;
   final bool addOriginalImage;
   final bool stream;
+  final List<CharacterPrompt> characterPrompts;
+  final List<VibeReference> vibeReferences;
+  final List<CharacterReference> characterReferences;
+  final double controlnetStrength;
+  final bool normalizeReferenceStrength;
 
   String get size => '${width}x$height';
 
@@ -90,6 +101,15 @@ class GenerationSpec extends Equatable {
     'noise': noise,
     'addOriginalImage': addOriginalImage,
     'stream': stream,
+    'characterPrompts': characterPrompts
+        .map((value) => value.toJson())
+        .toList(),
+    'vibeReferences': vibeReferences.map((value) => value.toJson()).toList(),
+    'characterReferences': characterReferences
+        .map((value) => value.toJson())
+        .toList(),
+    'controlnetStrength': controlnetStrength,
+    'normalizeReferenceStrength': normalizeReferenceStrength,
   };
 
   factory GenerationSpec.fromJson(Map<String, Object?> json) => GenerationSpec(
@@ -123,6 +143,17 @@ class GenerationSpec extends Equatable {
     noise: (json['noise'] as num?)?.toDouble() ?? 0,
     addOriginalImage: json['addOriginalImage'] == true,
     stream: json['stream'] == true,
+    characterPrompts: _jsonObjectList(
+      json['characterPrompts'],
+    ).map(CharacterPrompt.fromJson).toList(),
+    vibeReferences: _jsonObjectList(
+      json['vibeReferences'],
+    ).map(VibeReference.fromJson).toList(),
+    characterReferences: _jsonObjectList(
+      json['characterReferences'],
+    ).map(CharacterReference.fromJson).toList(),
+    controlnetStrength: (json['controlnetStrength'] as num?)?.toDouble() ?? 1,
+    normalizeReferenceStrength: json['normalizeReferenceStrength'] == true,
   );
 
   String encode() => jsonEncode(toJson());
@@ -212,6 +243,14 @@ class GenerationTask extends Equatable {
     retryCount,
     favorite,
   ];
+}
+
+List<Map<String, Object?>> _jsonObjectList(Object? value) {
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map((item) => Map<String, Object?>.from(item))
+      .toList();
 }
 
 T _enumByName<T extends Enum>(List<T> values, String? name, T fallback) {

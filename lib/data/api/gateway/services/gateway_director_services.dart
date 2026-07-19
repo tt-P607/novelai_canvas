@@ -18,6 +18,7 @@ abstract class GatewayDirectorEndpointService extends GatewayApiService {
   Future<ImageGenerationResult> process(
     GatewayDirectorRequestDto request, {
     List<JsonMap> patches = const [],
+    CancelToken? cancelToken,
   }) {
     if (request.tool != tool) {
       throw ArgumentError('导演工具请求与端点 Service 不匹配。');
@@ -25,6 +26,7 @@ abstract class GatewayDirectorEndpointService extends GatewayApiService {
     return postImageJson(
       tool.path,
       data: builder.build(request, patches: patches),
+      cancelToken: cancelToken,
     );
   }
 }
