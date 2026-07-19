@@ -18,18 +18,24 @@ workflows:
 
     scripts:
       - name: Install dependencies
-        script: flutter pub get
+        script: |
+          cd novelai_canvas
+          flutter pub get
 
       - name: Analyze and test
         script: |
+          cd novelai_canvas
           flutter analyze
           flutter test
 
       - name: Build unsigned iOS app
-        script: flutter build ios --release --no-codesign
+        script: |
+          cd novelai_canvas
+          flutter build ios --release --no-codesign
 
       - name: Package TrollStore IPA
         script: |
+          cd novelai_canvas
           mkdir -p Payload
           cp -R build/ios/iphoneos/Runner.app Payload/
           ditto -c -k --sequesterRsrc --keepParent Payload NovelAICanvas.ipa
@@ -37,5 +43,5 @@ workflows:
           shasum -a 256 NovelAICanvas.ipa > NovelAICanvas.ipa.sha256
 
     artifacts:
-      - NovelAICanvas.ipa
-      - NovelAICanvas.ipa.sha256
+      - novelai_canvas/NovelAICanvas.ipa
+      - novelai_canvas/NovelAICanvas.ipa.sha256
