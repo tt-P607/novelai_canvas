@@ -16,6 +16,7 @@ abstract class NativeApiService {
     String path, {
     required Object data,
     String? baseUrl,
+    CancelToken? cancelToken,
   }) async {
     try {
       final response = await client.post<List<int>>(
@@ -31,6 +32,7 @@ abstract class NativeApiService {
           },
         ),
         queryParameters: null,
+        cancelToken: cancelToken,
       );
       final bytes = Uint8List.fromList(response.data ?? const []);
       return ImageGenerationResult(

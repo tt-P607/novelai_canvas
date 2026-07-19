@@ -19,6 +19,7 @@ class NativeStreamService {
   Stream<NativeStreamEventDto> generate(
     NativeStreamRequestDto request, {
     List<JsonMap> patches = const [],
+    CancelToken? cancelToken,
   }) async* {
     try {
       final response = await client.post<ResponseBody>(
@@ -33,6 +34,7 @@ class NativeStreamService {
             'Referer': 'https://novelai.net/',
           },
         ),
+        cancelToken: cancelToken,
       );
       final body = response.data;
       if (body == null) return;

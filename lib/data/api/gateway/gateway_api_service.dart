@@ -14,12 +14,14 @@ abstract class GatewayApiService {
     String path, {
     required Object data,
     Options? options,
+    CancelToken? cancelToken,
   }) async {
     try {
       final response = await client.post<Object?>(
         path,
         data: data,
         options: options,
+        cancelToken: cancelToken,
       );
       final json = asJsonMap(response.data);
       final created = (json['created'] as num?)?.toInt();

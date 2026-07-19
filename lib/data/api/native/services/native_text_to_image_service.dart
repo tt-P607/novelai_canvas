@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../../core/network/json_patch_applier.dart';
 import '../../../../domain/entities/image_generation_result.dart';
 import '../native_api_service.dart';
@@ -14,8 +16,10 @@ class NativeTextToImageService extends NativeApiService {
   Future<ImageGenerationResult> generate(
     NativeTextToImageRequestDto request, {
     List<JsonMap> patches = const [],
+    CancelToken? cancelToken,
   }) => postZip(
     '/ai/generate-image',
     data: builder.build(request, patches: patches),
+    cancelToken: cancelToken,
   );
 }

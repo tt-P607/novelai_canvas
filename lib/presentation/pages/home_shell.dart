@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../domain/repositories/secure_credential_store.dart';
 import '../controllers/app_settings_controller.dart';
+import '../controllers/generation_controller.dart';
+import '../controllers/history_controller.dart';
+import 'creation_page.dart';
+import 'history_page.dart';
 import 'placeholder_feature_page.dart';
 import 'settings_page.dart';
 
@@ -10,10 +14,14 @@ class HomeShell extends StatefulWidget {
     super.key,
     required this.settingsController,
     required this.credentialStore,
+    required this.generationController,
+    required this.historyController,
   });
 
   final AppSettingsController settingsController;
   final SecureCredentialStore credentialStore;
+  final GenerationController generationController;
+  final HistoryController historyController;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -25,17 +33,11 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      const PlaceholderFeaturePage(
-        icon: Icons.auto_awesome_rounded,
-        title: '创作',
-        description: '统一编排文生图、图生图、局部重绘与高级 NovelAI 参数。',
-        nextStage: '大阶段三',
-      ),
-      const PlaceholderFeaturePage(
-        icon: Icons.photo_library_rounded,
-        title: '作品',
-        description: '集中查看生成历史、参数快照、收藏与本地图片。',
-        nextStage: '大阶段三',
+      CreationPage(controller: widget.generationController),
+      HistoryPage(
+        controller: widget.historyController,
+        generationController: widget.generationController,
+        onReuse: () => setState(() => _selectedIndex = 0),
       ),
       const PlaceholderFeaturePage(
         icon: Icons.build_circle_rounded,

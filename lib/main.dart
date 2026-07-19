@@ -5,6 +5,8 @@ import 'core/di/injection.dart';
 import 'core/theme/app_theme.dart';
 import 'domain/repositories/secure_credential_store.dart';
 import 'presentation/controllers/app_settings_controller.dart';
+import 'presentation/controllers/generation_controller.dart';
+import 'presentation/controllers/history_controller.dart';
 import 'presentation/pages/home_shell.dart';
 import 'presentation/pages/onboarding_page.dart';
 
@@ -31,6 +33,8 @@ class NovelAiCanvasApp extends StatelessWidget {
               ? HomeShell(
                   settingsController: settingsController,
                   credentialStore: getIt<SecureCredentialStore>(),
+                  generationController: getIt<GenerationController>(),
+                  historyController: getIt<HistoryController>(),
                 )
               : OnboardingPage(controller: settingsController),
         );

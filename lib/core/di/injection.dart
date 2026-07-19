@@ -23,17 +23,26 @@ import '../../data/api/native/services/native_text_to_image_service.dart';
 import '../../data/api/native/services/native_upscale_service.dart';
 import '../../data/api/native/services/native_user_service.dart';
 import '../../data/datasources/local/app_preferences.dart';
+import '../../data/datasources/local/generation_database.dart';
 import '../../data/repositories/app_settings_repository_impl.dart';
 import '../../data/repositories/flutter_secure_credential_store.dart';
+import '../../data/repositories/generation_history_repository_impl.dart';
+import '../../data/repositories/generation_repository_impl.dart';
 import '../../domain/repositories/app_settings_repository.dart';
+import '../../domain/repositories/generation_history_repository.dart';
+import '../../domain/repositories/generation_repository.dart';
 import '../../domain/repositories/secure_credential_store.dart';
 import '../../presentation/controllers/app_settings_controller.dart';
+import '../../presentation/controllers/generation_controller.dart';
+import '../../presentation/controllers/history_controller.dart';
 import '../constants/app_constants.dart';
 import '../network/api_inspector.dart';
 import '../network/api_mode_router.dart';
 import '../network/backend_connection_service.dart';
 import '../network/bearer_token_interceptor.dart';
 import '../network/dio_factory.dart';
+import '../queue/generation_queue.dart';
+import '../storage/generation_image_store.dart';
 
 final getIt = GetIt.instance;
 
@@ -65,6 +74,13 @@ Future<void> configureDependencies() async {
   getIt.registerSingleton<AppSettingsController>(
     AppSettingsController(getIt(), settings),
   );
+
+  getIt.registerLazySingleton(GenerationDatabase.new);
+  getIt.registerLazySingleton(GenerationImageStore.new);
+  getIt.registerLazySingleton<GenerationHistoryRepository>(
+    () => GenerationHistoryRepositoryImpl(getIt()),
+  );
+  await getIt<GenerationHistoryRepository>().initialize();
 
   getIt.registerLazySingleton<ApiInspector>(ApiInspector.new);
   getIt.registerLazySingleton<Dio>(
@@ -131,4 +147,36 @@ Future<void> configureDependencies() async {
   getIt.registerLazySingleton(() => GatewaySketchService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayColorizeService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayEmotionService(gatewayDio));
+
+  getIt.registerLazySingleton<GenerationRepository>(
+    () => GenerationRepositoryImpl(
+      nativeTextToImageService: getIt(),
+      nativeImageToImageService: getIt(),
+      nativeInpaintService: getIt(),
+      nativeStreamService: getIt(),
+      gatewayGenerationService: getIt(),
+      gatewayImageToImageService: getIt(),
+      gatewayInpaintService: getIt(),
+    ),
+  );
+  getIt.registerLazySingleton(
+    () => GenerationQueue(
+      generationRepository: getIt(),
+      historyRepository: getIt(),
+      imageStore: getIt(),
+    ),
+  );
+  await getIt<GenerationQueue>().initialize();
+  getIt.registerLazySingleton(
+    () => GenerationController(
+      queue: getIt(),
+      historyRepository: getIt(),
+      backendModeProvider: () =>
+          getIt<AppSettingsController>().settings.backendMode,
+    ),
+  );
+  getIt.registerLazySingleton(
+    () => HistoryController(repository: getIt(), queue: getIt()),
+  );
+  await getIt<HistoryController>().load();
 }

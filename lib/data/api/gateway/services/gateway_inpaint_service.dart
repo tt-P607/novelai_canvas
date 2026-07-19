@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../../core/network/json_patch_applier.dart';
 import '../../../../domain/entities/image_generation_result.dart';
 import '../dto/gateway_inpaint_request_dto.dart';
@@ -10,8 +12,10 @@ class GatewayInpaintService extends GatewayApiService {
   Future<ImageGenerationResult> generate(
     GatewayInpaintRequestDto request, {
     List<JsonMap> patches = const [],
+    CancelToken? cancelToken,
   }) => postImageJson(
     '/v1/images/inpainting',
     data: builder.build(request, patches: patches),
+    cancelToken: cancelToken,
   );
 }
