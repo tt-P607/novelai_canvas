@@ -1,7 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../core/constants/app_constants.dart';
-import '../../core/network/backend_mode.dart';
+import '../../../core/constants/app_constants.dart';
+import '../../../core/network/backend_mode.dart';
 
 class AppPreferences {
   AppPreferences(this._preferences);

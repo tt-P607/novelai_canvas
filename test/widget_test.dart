@@ -1,30 +1,39 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:novelai_canvas/core/network/backend_mode.dart';
+import 'package:novelai_canvas/domain/entities/app_settings.dart';
+import 'package:novelai_canvas/domain/repositories/app_settings_repository.dart';
+import 'package:novelai_canvas/presentation/controllers/app_settings_controller.dart';
+import 'package:novelai_canvas/presentation/pages/onboarding_page.dart';
 
-import 'package:novelai_canvas/main.dart';
+class _MemorySettingsRepository implements AppSettingsRepository {
+  AppSettings value = const AppSettings.initial();
+
+  @override
+  Future<AppSettings> load() async => value;
+
+  @override
+  Future<void> save(AppSettings settings) async {
+    value = settings;
+  }
+}
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('onboarding can enter with native backend', (tester) async {
+    final repository = _MemorySettingsRepository();
+    final controller = AppSettingsController(repository, repository.value);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      MaterialApp(home: OnboardingPage(controller: controller)),
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(find.text('NovelAI Canvas'), findsOneWidget);
+    expect(find.text('进入绘境'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    await tester.tap(find.text('进入绘境'));
+    await tester.pumpAndSettle();
+
+    expect(controller.settings.onboardingCompleted, isTrue);
+    expect(controller.settings.backendMode, BackendMode.native);
   });
 }
