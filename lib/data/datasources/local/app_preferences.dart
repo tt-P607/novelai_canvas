@@ -17,11 +17,17 @@ class AppPreferences {
     value,
   );
 
-  String get gatewayBaseUrl =>
-      _preferences.getString(AppConstants.gatewayBaseUrlPreferenceKey) ?? '';
+  String get endpointBaseUrl {
+    final current = _preferences.getString(
+      AppConstants.endpointBaseUrlPreferenceKey,
+    );
+    if (current != null && current.trim().isNotEmpty) return current.trim();
+    return _preferences.getString(AppConstants.gatewayBaseUrlPreferenceKey) ??
+        '';
+  }
 
-  Future<void> setGatewayBaseUrl(String value) => _preferences.setString(
-    AppConstants.gatewayBaseUrlPreferenceKey,
+  Future<void> setEndpointBaseUrl(String value) => _preferences.setString(
+    AppConstants.endpointBaseUrlPreferenceKey,
     value.trim(),
   );
 
@@ -37,4 +43,10 @@ class AppPreferences {
 
   Future<void> setBackendMode(BackendMode mode) =>
       _preferences.setString(AppConstants.backendModePreferenceKey, mode.name);
+
+  bool get streamGenerationEnabled =>
+      _preferences.getBool('stream_generation_enabled') ?? false;
+
+  Future<void> setStreamGenerationEnabled(bool value) =>
+      _preferences.setBool('stream_generation_enabled', value);
 }

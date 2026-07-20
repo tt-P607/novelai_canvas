@@ -168,7 +168,7 @@ class GenerationQueue {
     } finally {
       _activeTask = null;
       _isProcessing = false;
-      await _wakeLockSetter(false);
+      _setWakeLockBestEffort(false);
       _emitState();
     }
   }
@@ -186,7 +186,11 @@ class GenerationQueue {
     await _historyRepository.update(running);
     _taskController.add(running);
     _emitState();
-    await _wakeLockSetter(true);
+
+    // Keeping the screen awake is an auxiliary feature and must never block
+    // the actual generation request. Some Android vendors can leave the
+    // platform-channel call pending, while a missing plugin can throw.
+    _setWakeLockBestEffort(true);
 
     try {
       final result = running.spec.stream
@@ -282,6 +286,10 @@ class GenerationQueue {
     if (_knownIds.add(taskId)) _pendingIds.add(taskId);
   }
 
+  void _setWakeLockBestEffort(bool enabled) {
+    unawaited(_wakeLockSetter(enabled).catchError((_) {}));
+  }
+
   static Future<void> _setWakeLock(bool enabled) =>
       enabled ? WakelockPlus.enable() : WakelockPlus.disable();
 
@@ -305,7 +313,7 @@ class GenerationQueue {
     _disposed = true;
     final active = _activeTask;
     if (active != null) await _generationRepository.cancel(active.id);
-    await _wakeLockSetter(false);
+    _setWakeLockBestEffort(false);
     await _stateController.close();
     await _taskController.close();
   }

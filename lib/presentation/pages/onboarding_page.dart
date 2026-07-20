@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/network/backend_mode.dart';
+import '../../domain/repositories/secure_credential_store.dart';
 import '../controllers/app_settings_controller.dart';
 
 class OnboardingPage extends StatefulWidget {
-  const OnboardingPage({super.key, required this.controller});
+  const OnboardingPage({
+    super.key,
+    required this.controller,
+    required this.credentialStore,
+  });
 
   final AppSettingsController controller;
+  final SecureCredentialStore credentialStore;
 
   @override
   State<OnboardingPage> createState() => _OnboardingPageState();
@@ -14,31 +21,55 @@ class OnboardingPage extends StatefulWidget {
 
 class _OnboardingPageState extends State<OnboardingPage> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _gatewayController;
+  late final TextEditingController _endpointController;
+  late final TextEditingController _apiKeyController;
   BackendMode _mode = BackendMode.native;
   bool _saving = false;
+  bool _loadingSecret = true;
+  bool _obscure = true;
 
   @override
   void initState() {
     super.initState();
     _mode = widget.controller.settings.backendMode;
-    _gatewayController = TextEditingController(
-      text: widget.controller.settings.gatewayBaseUrl,
+    _endpointController = TextEditingController(
+      text: widget.controller.settings.endpointBaseUrl.isEmpty
+          ? AppConstants.nativeBaseUrl
+          : widget.controller.settings.endpointBaseUrl,
     );
+    _apiKeyController = TextEditingController();
+    _loadSecret();
+  }
+
+  Future<void> _loadSecret() async {
+    _apiKeyController.text =
+        await widget.credentialStore.read(AppConstants.imageApiCredentialKey) ??
+        '';
+    if (mounted) setState(() => _loadingSecret = false);
   }
 
   @override
   void dispose() {
-    _gatewayController.dispose();
+    _endpointController.dispose();
+    _apiKeyController.dispose();
     super.dispose();
   }
 
   Future<void> _continue() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
+    final key = _apiKeyController.text.trim();
+    if (key.isEmpty) {
+      await widget.credentialStore.delete(AppConstants.imageApiCredentialKey);
+    } else {
+      await widget.credentialStore.write(
+        key: AppConstants.imageApiCredentialKey,
+        value: key,
+      );
+    }
     await widget.controller.completeOnboarding(
       backendMode: _mode,
-      gatewayBaseUrl: _gatewayController.text,
+      endpointBaseUrl: _endpointController.text,
     );
     if (mounted) setState(() => _saving = false);
   }
@@ -93,7 +124,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '先选择默认连接方式。后续可随时在设置中切换，原生接口与自建网关配置互不覆盖。',
+                      '这里只切换请求格式。URL 与密钥使用同一套输入，后续可随时在设置中修改。',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: colors.onSurfaceVariant,
                         height: 1.55,
@@ -111,70 +142,83 @@ class _OnboardingPageState extends State<OnboardingPage> {
                                     : Icons.hub_rounded,
                               ),
                               label: Text(
-                                mode == BackendMode.native ? '原生接口' : '自建网关',
+                                mode == BackendMode.native
+                                    ? '原生接口'
+                                    : 'OpenAI 接口',
                               ),
                             ),
                           )
                           .toList(),
                       selected: {_mode},
                       onSelectionChanged: (selection) {
-                        setState(() => _mode = selection.first);
+                        final nextMode = selection.first;
+                        setState(() {
+                          _mode = nextMode;
+                          if (nextMode == BackendMode.native &&
+                              _endpointController.text.trim().isEmpty) {
+                            _endpointController.text =
+                                AppConstants.nativeBaseUrl;
+                          }
+                        });
                       },
                     ),
                     const SizedBox(height: 20),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      child: _mode == BackendMode.gateway
-                          ? TextFormField(
-                              key: const ValueKey('gateway-url'),
-                              controller: _gatewayController,
-                              keyboardType: TextInputType.url,
-                              autocorrect: false,
-                              decoration: const InputDecoration(
-                                labelText: '网关 Base URL',
-                                hintText: 'https://example.com',
-                                prefixIcon: Icon(Icons.link_rounded),
-                              ),
-                              validator: (value) {
-                                if (_mode != BackendMode.gateway) return null;
-                                final uri = Uri.tryParse(value?.trim() ?? '');
-                                if (uri == null ||
-                                    !uri.hasScheme ||
-                                    !uri.hasAuthority ||
-                                    (uri.scheme != 'http' &&
-                                        uri.scheme != 'https')) {
-                                  return '请输入完整的 http:// 或 https:// 地址';
-                                }
-                                return null;
-                              },
-                            )
-                          : Container(
-                              key: const ValueKey('native-info'),
-                              padding: const EdgeInsets.all(18),
-                              decoration: BoxDecoration(
-                                color: colors.surfaceContainerLow,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: colors.outlineVariant,
-                                ),
-                              ),
-                              child: const Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(Icons.security_rounded),
-                                  SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      'NovelAI Token 将在设置页单独填写，并保存在系统 Keychain / Keystore 中。',
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                    TextFormField(
+                      controller: _endpointController,
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      decoration: InputDecoration(
+                        labelText: '接口 URL',
+                        hintText: _mode == BackendMode.native
+                            ? AppConstants.nativeBaseUrl
+                            : 'https://example.com',
+                        helperText: _mode == BackendMode.native
+                            ? '默认使用 NovelAI 官方地址；改为 novelai-gateway 根地址时会自动补全 /_api。'
+                            : 'OpenAI 接口必须填写兼容服务地址，无需在末尾填写 /v1。',
+                        prefixIcon: const Icon(Icons.link_rounded),
+                      ),
+                      validator: (value) {
+                        final text = value?.trim() ?? '';
+                        if (text.isEmpty) return '接口 URL 不能为空';
+                        final uri = Uri.tryParse(text);
+                        if (uri == null ||
+                            !uri.hasScheme ||
+                            !uri.hasAuthority ||
+                            (uri.scheme != 'http' && uri.scheme != 'https')) {
+                          return '请输入完整的 http:// 或 https:// 地址';
+                        }
+                        return null;
+                      },
                     ),
+                    const SizedBox(height: 14),
+                    if (_loadingSecret)
+                      const LinearProgressIndicator()
+                    else
+                      TextFormField(
+                        controller: _apiKeyController,
+                        obscureText: _obscure,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: InputDecoration(
+                          labelText: '密钥',
+                          hintText: _mode == BackendMode.native
+                              ? 'NovelAI Token'
+                              : 'API Key（按服务要求填写）',
+                          prefixIcon: const Icon(Icons.key_rounded),
+                          suffixIcon: IconButton(
+                            onPressed: () =>
+                                setState(() => _obscure = !_obscure),
+                            icon: Icon(
+                              _obscure
+                                  ? Icons.visibility_rounded
+                                  : Icons.visibility_off_rounded,
+                            ),
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 28),
                     FilledButton.icon(
-                      onPressed: _saving ? null : _continue,
+                      onPressed: _saving || _loadingSecret ? null : _continue,
                       icon: _saving
                           ? const SizedBox.square(
                               dimension: 18,

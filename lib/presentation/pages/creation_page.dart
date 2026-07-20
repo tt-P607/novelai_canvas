@@ -10,6 +10,7 @@ import '../controllers/generation_controller.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
 import '../controllers/prompt_assistant_controller.dart';
 import '../widgets/character_position_grid.dart';
+import '../widgets/fullscreen_image_preview.dart';
 import 'mask_editor_page.dart';
 import 'prompt_assistant_page.dart';
 
@@ -19,11 +20,13 @@ class CreationPage extends StatefulWidget {
     required this.controller,
     required this.promptAssistantController,
     required this.llmSettingsController,
+    this.onOpenImageTools,
   });
 
   final GenerationController controller;
   final PromptAssistantController promptAssistantController;
   final LlmAssistantSettingsController llmSettingsController;
+  final ValueChanged<String>? onOpenImageTools;
 
   @override
   State<CreationPage> createState() => _CreationPageState();
@@ -38,6 +41,7 @@ class _CreationPageState extends State<CreationPage> {
   late final TextEditingController _customHeightController;
   final ImagePicker _picker = ImagePicker();
   bool _assistantMinimized = false;
+  Offset? _assistantBubbleOffset;
 
   GenerationController get controller => widget.controller;
 
@@ -181,18 +185,60 @@ class _CreationPageState extends State<CreationPage> {
             ),
           ),
           if (_assistantMinimized)
-            Positioned(
-              right: 18,
-              bottom: 92,
-              child: FloatingActionButton.small(
-                heroTag: 'prompt-assistant-bubble',
-                tooltip: '打开提示词助手',
-                onPressed: () {
-                  setState(() => _assistantMinimized = false);
-                  _openPromptAssistant();
-                },
-                child: const Icon(Icons.auto_fix_high_rounded),
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const size = 52.0;
+                const margin = 12.0;
+                final fallback = Offset(
+                  constraints.maxWidth - size - margin,
+                  constraints.maxHeight - size - 96,
+                );
+                final value = _assistantBubbleOffset ?? fallback;
+                final clamped = Offset(
+                  value.dx.clamp(margin, constraints.maxWidth - size - margin),
+                  value.dy.clamp(margin, constraints.maxHeight - size - margin),
+                );
+                return Positioned(
+                  left: clamped.dx,
+                  top: clamped.dy,
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      setState(() {
+                        _assistantBubbleOffset = Offset(
+                          (clamped.dx + details.delta.dx).clamp(
+                            margin,
+                            constraints.maxWidth - size - margin,
+                          ),
+                          (clamped.dy + details.delta.dy).clamp(
+                            margin,
+                            constraints.maxHeight - size - margin,
+                          ),
+                        );
+                      });
+                    },
+                    onPanEnd: (_) {
+                      final current = _assistantBubbleOffset ?? clamped;
+                      setState(() {
+                        _assistantBubbleOffset = Offset(
+                          current.dx + size / 2 < constraints.maxWidth / 2
+                              ? margin
+                              : constraints.maxWidth - size - margin,
+                          current.dy,
+                        );
+                      });
+                    },
+                    child: FloatingActionButton.small(
+                      heroTag: 'prompt-assistant-bubble',
+                      tooltip: '打开提示词助手',
+                      onPressed: () {
+                        setState(() => _assistantMinimized = false);
+                        _openPromptAssistant();
+                      },
+                      child: const Icon(Icons.auto_fix_high_rounded),
+                    ),
+                  ),
+                );
+              },
             ),
         ],
       ),
@@ -240,24 +286,35 @@ class _CreationPageState extends State<CreationPage> {
                 alignment: Alignment.center,
                 children: [...previousChildren, ?currentChild],
               ),
-              child: hasPreview
-                  ? Image.memory(
-                      Uint8List.fromList(previewBytes),
-                      key: const ValueKey('stream-preview'),
-                      width: double.infinity,
-                      height: 280,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                      filterQuality: FilterQuality.low,
-                    )
-                  : Image.file(
-                      File(completedPath!),
-                      key: ValueKey(completedPath),
-                      width: double.infinity,
-                      height: 280,
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
-                    ),
+              child: InkWell(
+                onTap: hasPreview
+                    ? () => FullscreenImagePreview.showMemory(
+                        context,
+                        Uint8List.fromList(previewBytes),
+                      )
+                    : () => FullscreenImagePreview.showFile(
+                        context,
+                        completedPath!,
+                      ),
+                child: hasPreview
+                    ? Image.memory(
+                        Uint8List.fromList(previewBytes),
+                        key: const ValueKey('stream-preview'),
+                        width: double.infinity,
+                        height: 280,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                        filterQuality: FilterQuality.low,
+                      )
+                    : Image.file(
+                        File(completedPath!),
+                        key: ValueKey(completedPath),
+                        width: double.infinity,
+                        height: 280,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+              ),
             ),
           ),
           Padding(
@@ -274,10 +331,17 @@ class _CreationPageState extends State<CreationPage> {
                 Expanded(
                   child: Text(
                     hasPreview
-                        ? '渐进式预览 · Step ${controller.queueState.previewStep ?? 0}'
+                        ? '流式预览 · Step ${controller.queueState.previewStep ?? 0}'
                         : '最新生成结果',
                   ),
                 ),
+                if (!hasPreview && completedPath != null)
+                  IconButton(
+                    tooltip: '发送到图像工具',
+                    onPressed: () =>
+                        widget.onOpenImageTools?.call(completedPath),
+                    icon: const Icon(Icons.auto_fix_high_outlined),
+                  ),
               ],
             ),
           ),
@@ -511,8 +575,8 @@ class _CreationPageState extends State<CreationPage> {
           ],
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
-            title: const Text('渐进式中间预览'),
-            subtitle: const Text('NovelAI 原生后端的文生图、图生图和局部重绘均可使用'),
+            secondary: const Icon(Icons.stream_rounded),
+            title: const Text('流式生成'),
             value: controller.stream,
             onChanged: controller.updateStream,
           ),
@@ -778,25 +842,20 @@ class _CreationPageState extends State<CreationPage> {
             ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: () => _pickImage(mask: false),
+            onPressed: _pickSourceImage,
             icon: const Icon(Icons.photo_library_outlined),
             label: Text(controller.sourceImagePath == null ? '选择源图片' : '更换源图片'),
           ),
           if (controller.mode == GenerationMode.inpaint) ...[
             const Divider(height: 28),
-            Text(controller.maskImagePath == null ? '尚未选择蒙版' : '已选择蒙版文件'),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => _pickImage(mask: true),
-              icon: const Icon(Icons.layers_outlined),
-              label: const Text('选择蒙版 PNG'),
-            ),
             FilledButton.tonalIcon(
               onPressed: controller.sourceImagePath == null
                   ? null
                   : _openMaskEditor,
               icon: const Icon(Icons.brush_rounded),
-              label: const Text('打开蒙版画板'),
+              label: Text(
+                controller.maskImagePath == null ? '涂抹重绘区域' : '重新编辑重绘区域',
+              ),
             ),
           ],
         ],
@@ -828,14 +887,9 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
-  Future<void> _pickImage({required bool mask}) async {
+  Future<void> _pickSourceImage() async {
     final image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image == null) return;
-    if (mask) {
-      controller.setMaskImage(image.path);
-    } else {
-      controller.setSourceImage(image.path);
-    }
+    if (image != null) controller.setSourceImage(image.path);
   }
 
   Future<void> _openMaskEditor() async {
@@ -946,11 +1000,35 @@ class _CreationPageState extends State<CreationPage> {
 
   Future<void> _submit() async {
     try {
-      await controller.submit();
+      final task = await controller.submit();
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('任务已加入持久化生成队列。')));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            width: 210,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            content: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.schedule_rounded, size: 18),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    task.status == GenerationTaskStatus.running
+                        ? '已开始生成'
+                        : '已加入生成队列',
+                  ),
+                ),
+              ],
+            ),
+            duration: const Duration(milliseconds: 1400),
+          ),
+        );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

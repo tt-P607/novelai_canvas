@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../data/api/llm/llm_chat_service.dart';
 import '../../domain/entities/llm_assistant_settings.dart';
 import '../../domain/repositories/llm_assistant_settings_repository.dart';
 import '../../domain/repositories/secure_credential_store.dart';
@@ -9,13 +10,16 @@ class LlmAssistantSettingsController extends ChangeNotifier {
   LlmAssistantSettingsController({
     required LlmAssistantSettingsRepository repository,
     required SecureCredentialStore credentialStore,
+    required LlmChatService llmService,
     required LlmAssistantSettings initialSettings,
   }) : _repository = repository,
        _credentialStore = credentialStore,
+       _llmService = llmService,
        settings = initialSettings;
 
   final LlmAssistantSettingsRepository _repository;
   final SecureCredentialStore _credentialStore;
+  final LlmChatService _llmService;
 
   LlmAssistantSettings settings;
 
@@ -28,12 +32,22 @@ class LlmAssistantSettingsController extends ChangeNotifier {
   Future<String> loadApiKey() async =>
       await _credentialStore.read(AppConstants.llmCredentialKey) ?? '';
 
+  Future<List<String>> fetchModels({
+    required String baseUrl,
+    required String apiKey,
+  }) => _llmService.listModels(
+    baseUrl: _normalizeBaseUrl(baseUrl),
+    apiKey: apiKey.trim(),
+  );
+
   Future<void> saveConnection({
     required String providerName,
     required String baseUrl,
     required String model,
     required String danbooruBaseUrl,
+    required bool danbooruToolsEnabled,
     required bool showNsfw,
+    required bool autoApplyPrompt,
     required String apiKey,
   }) async {
     settings = settings.copyWith(
@@ -42,7 +56,9 @@ class LlmAssistantSettingsController extends ChangeNotifier {
       model: model.trim(),
       visionModel: model.trim(),
       danbooruBaseUrl: _normalizeOptionalBaseUrl(danbooruBaseUrl),
+      danbooruToolsEnabled: danbooruToolsEnabled,
       showNsfw: showNsfw,
+      autoApplyPrompt: autoApplyPrompt,
     );
     await _repository.save(settings);
     if (apiKey.trim().isEmpty) {
@@ -56,19 +72,23 @@ class LlmAssistantSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updatePrompt(PromptTemplateKind kind, String value) async {
+  Future<void> updateAgentPrompt(String value) async {
     final prompt = value.trim().isEmpty
-        ? PromptTemplateDefaults.valueOf(kind)
+        ? PromptTemplateDefaults.agentPrompt
         : value.trim();
     settings = settings.copyWith(
-      prompts: settings.prompts.update(kind, prompt),
+      prompts: settings.prompts.copyWith(agentPrompt: prompt),
     );
     await _repository.save(settings);
     notifyListeners();
   }
 
-  Future<void> resetPrompt(PromptTemplateKind kind) async {
-    settings = settings.copyWith(prompts: settings.prompts.reset(kind));
+  Future<void> resetAgentPrompt() async {
+    settings = settings.copyWith(
+      prompts: settings.prompts.copyWith(
+        agentPrompt: PromptTemplateDefaults.agentPrompt,
+      ),
+    );
     await _repository.save(settings);
     notifyListeners();
   }

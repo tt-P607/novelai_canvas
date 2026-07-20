@@ -2,8 +2,11 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+
+import '../widgets/fullscreen_image_preview.dart';
 
 class MaskEditorPage extends StatefulWidget {
   const MaskEditorPage({
@@ -24,7 +27,7 @@ class MaskEditorPage extends StatefulWidget {
 class _MaskEditorPageState extends State<MaskEditorPage> {
   final List<_MaskStroke> _strokes = [];
   _MaskStroke? _activeStroke;
-  double _brushSize = 36;
+  double _brushSize = 44;
   bool _eraser = false;
   bool _saving = false;
 
@@ -75,9 +78,15 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.file(
-                          File(widget.sourceImagePath),
-                          fit: BoxFit.fill,
+                        GestureDetector(
+                          onDoubleTap: () => FullscreenImagePreview.showFile(
+                            context,
+                            widget.sourceImagePath,
+                          ),
+                          child: Image.file(
+                            File(widget.sourceImagePath),
+                            fit: BoxFit.fill,
+                          ),
                         ),
                         CustomPaint(
                           painter: _MaskOverlayPainter(
@@ -173,6 +182,17 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
       final image = await picture.toImage(width, height);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) throw StateError('无法编码蒙版 PNG。');
+      final decoded = img.decodePng(byteData.buffer.asUint8List());
+      if (decoded == null) throw StateError('无法处理蒙版 PNG。');
+      for (final pixel in decoded) {
+        final value = pixel.r > 127 ? 255 : 0;
+        pixel
+          ..r = value
+          ..g = value
+          ..b = value
+          ..a = 255;
+      }
+      final maskBytes = img.encodePng(decoded);
       final directory = await getApplicationSupportDirectory();
       final maskDirectory = Directory(p.join(directory.path, 'masks'));
       await maskDirectory.create(recursive: true);
@@ -180,7 +200,7 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
         maskDirectory.path,
         'mask_${DateTime.now().millisecondsSinceEpoch}.png',
       );
-      await File(path).writeAsBytes(byteData.buffer.asUint8List(), flush: true);
+      await File(path).writeAsBytes(maskBytes, flush: true);
       if (!mounted) return;
       Navigator.pop(context, path);
     } finally {
@@ -195,23 +215,11 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
       ..strokeWidth = stroke.normalizedWidth * size.shortestSide
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true
+      ..blendMode = BlendMode.src
       ..style = PaintingStyle.stroke;
-    final path = Path();
-    final first = _denormalize(stroke.points.first, size);
-    path.moveTo(first.dx, first.dy);
-    if (stroke.points.length == 1) {
-      path.lineTo(first.dx + 0.01, first.dy + 0.01);
-    } else {
-      for (final point in stroke.points.skip(1)) {
-        final position = _denormalize(point, size);
-        path.lineTo(position.dx, position.dy);
-      }
-    }
-    canvas.drawPath(path, paint);
+    canvas.drawPath(_maskSmoothPath(stroke.points, size), paint);
   }
-
-  Offset _denormalize(Offset point, Size size) =>
-      Offset(point.dx * size.width, point.dy * size.height);
 
   int _align8(int value) => ((value + 7) ~/ 8) * 8;
 }
@@ -227,38 +235,23 @@ class _MaskOverlayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = Colors.black.withValues(alpha: 0.22),
-    );
+    canvas.saveLayer(Offset.zero & size, Paint());
     for (final stroke in [...strokes, ?activeStroke]) {
       if (stroke.points.isEmpty) continue;
       final paint = Paint()
-        // 使用不透明预览色，避免分多笔涂抹时透明度叠加造成“重叠变深”。
         ..color = stroke.eraser
-            ? const Color(0xFF19171F)
-            : const Color(0xFFE45C68)
+            ? Colors.transparent
+            : const Color(0xFFFF4F9A).withValues(alpha: 0.42)
         ..strokeWidth = stroke.normalizedWidth * size.shortestSide
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
+        ..isAntiAlias = true
+        ..blendMode = stroke.eraser ? BlendMode.clear : BlendMode.srcOver
         ..style = PaintingStyle.stroke;
-      final path = Path();
-      final first = _position(stroke.points.first, size);
-      path.moveTo(first.dx, first.dy);
-      if (stroke.points.length == 1) {
-        path.lineTo(first.dx + 0.01, first.dy + 0.01);
-      } else {
-        for (final point in stroke.points.skip(1)) {
-          final position = _position(point, size);
-          path.lineTo(position.dx, position.dy);
-        }
-      }
-      canvas.drawPath(path, paint);
+      canvas.drawPath(_maskSmoothPath(stroke.points, size), paint);
     }
+    canvas.restore();
   }
-
-  Offset _position(Offset point, Size size) =>
-      Offset(point.dx * size.width, point.dy * size.height);
 
   @override
   bool shouldRepaint(covariant _MaskOverlayPainter oldDelegate) => true;
@@ -274,4 +267,38 @@ class _MaskStroke {
   final List<Offset> points;
   final double normalizedWidth;
   final bool eraser;
+}
+
+Path _maskSmoothPath(List<Offset> points, Size size) {
+  final path = Path();
+  final first = Offset(
+    points.first.dx * size.width,
+    points.first.dy * size.height,
+  );
+  path.moveTo(first.dx, first.dy);
+  if (points.length == 1) {
+    path.lineTo(first.dx + 0.01, first.dy + 0.01);
+    return path;
+  }
+  for (var index = 1; index < points.length - 1; index++) {
+    final current = Offset(
+      points[index].dx * size.width,
+      points[index].dy * size.height,
+    );
+    final next = Offset(
+      points[index + 1].dx * size.width,
+      points[index + 1].dy * size.height,
+    );
+    final midpoint = Offset(
+      (current.dx + next.dx) / 2,
+      (current.dy + next.dy) / 2,
+    );
+    path.quadraticBezierTo(current.dx, current.dy, midpoint.dx, midpoint.dy);
+  }
+  final last = Offset(
+    points.last.dx * size.width,
+    points.last.dy * size.height,
+  );
+  path.lineTo(last.dx, last.dy);
+  return path;
 }

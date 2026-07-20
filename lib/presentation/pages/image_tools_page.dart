@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../domain/repositories/image_tools_repository.dart';
 import '../controllers/image_tools_controller.dart';
+import '../widgets/fullscreen_image_preview.dart';
 
 class ImageToolsPage extends StatefulWidget {
   const ImageToolsPage({super.key, required this.controller});
@@ -63,30 +64,7 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
                 ],
                 if (controller.resultBytes != null) ...[
                   const SizedBox(height: 16),
-                  Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      children: [
-                        Image.memory(
-                          controller.resultBytes!,
-                          width: double.infinity,
-                          fit: BoxFit.contain,
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.save_alt_rounded),
-                          title: const Text('处理结果已保存到应用目录'),
-                          subtitle: Text(
-                            controller.resultPath ?? '',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: controller.anlasCost == null
-                              ? null
-                              : Chip(label: Text('${controller.anlasCost} A')),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _comparisonCard(),
                 ],
               ],
             ),
@@ -94,6 +72,98 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
         ],
       ),
     ),
+  );
+
+  Widget _comparisonCard() => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '处理对比',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              if (controller.anlasCost != null)
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('${controller.anlasCost} A'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _comparisonImage(
+                  label: '原图',
+                  child: Image.file(
+                    File(controller.sourceImagePath!),
+                    height: 220,
+                    fit: BoxFit.contain,
+                  ),
+                  onTap: () => FullscreenImagePreview.showFile(
+                    context,
+                    controller.sourceImagePath!,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _comparisonImage(
+                  label: '结果',
+                  child: Image.memory(
+                    controller.resultBytes!,
+                    height: 220,
+                    fit: BoxFit.contain,
+                  ),
+                  onTap: () => FullscreenImagePreview.showMemory(
+                    context,
+                    controller.resultBytes!,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: controller.useResultAsSource,
+              icon: const Icon(Icons.redo_rounded),
+              label: const Text('使用结果继续处理'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _comparisonImage({
+    required String label,
+    required Widget child,
+    required VoidCallback onTap,
+  }) => Column(
+    children: [
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Text(label, style: Theme.of(context).textTheme.labelLarge),
+      ),
+      const SizedBox(height: 6),
+      InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(width: double.infinity, child: child),
+        ),
+      ),
+    ],
   );
 
   Widget _sourceCard() => Card(
@@ -105,13 +175,20 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
           Text('源图片', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           if (controller.sourceImagePath != null)
-            ClipRRect(
+            InkWell(
               borderRadius: BorderRadius.circular(12),
-              child: Image.file(
-                File(controller.sourceImagePath!),
-                height: 220,
-                width: double.infinity,
-                fit: BoxFit.contain,
+              onTap: () => FullscreenImagePreview.showFile(
+                context,
+                controller.sourceImagePath!,
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  File(controller.sourceImagePath!),
+                  height: 220,
+                  width: double.infinity,
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
           const SizedBox(height: 8),
@@ -120,27 +197,16 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
             icon: const Icon(Icons.photo_library_outlined),
             label: Text(controller.sourceImagePath == null ? '选择图片' : '更换图片'),
           ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: '${controller.width}x${controller.height}',
-            decoration: const InputDecoration(
-              labelText: '源图尺寸',
-              border: OutlineInputBorder(),
+          if (controller.sourceImagePath != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.straighten_rounded, size: 18),
+                const SizedBox(width: 8),
+                Text('已识别 ${controller.width} × ${controller.height}'),
+              ],
             ),
-            items: const [
-              DropdownMenuItem(value: '512x512', child: Text('512 × 512')),
-              DropdownMenuItem(value: '832x1216', child: Text('832 × 1216')),
-              DropdownMenuItem(value: '1216x832', child: Text('1216 × 832')),
-              DropdownMenuItem(value: '1024x1024', child: Text('1024 × 1024')),
-            ],
-            onChanged: (value) {
-              final parts = value!.split('x');
-              controller.updateSize(
-                width: int.parse(parts.first),
-                height: int.parse(parts.last),
-              );
-            },
-          ),
+          ],
         ],
       ),
     ),
@@ -192,12 +258,33 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
             DirectorTool.emotion,
           }.contains(controller.selectedTool)) ...[
             const SizedBox(height: 12),
+            if (controller.selectedTool == DirectorTool.emotion) ...[
+              DropdownButtonFormField<String>(
+                initialValue: controller.selectedEmotion,
+                decoration: const InputDecoration(
+                  labelText: '表情',
+                  border: OutlineInputBorder(),
+                ),
+                items: directorEmotionPrompts.keys
+                    .map(
+                      (label) =>
+                          DropdownMenuItem(value: label, child: Text(label)),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) controller.selectEmotion(value);
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
             TextField(
               controller: _promptController,
               onChanged: controller.updatePrompt,
-              decoration: const InputDecoration(
-                labelText: '处理提示词',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: controller.selectedTool == DirectorTool.emotion
+                    ? '附加提示词（可选）'
+                    : '上色提示词（可选）',
+                border: const OutlineInputBorder(),
               ),
             ),
             Text('Defry ${controller.defry}'),
@@ -273,7 +360,7 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
 
   Future<void> _pickImage() async {
     final image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) controller.setSourceImage(image.path);
+    if (image != null) await controller.setSourceImage(image.path);
   }
 
   String _directorLabel(DirectorTool tool) => switch (tool) {

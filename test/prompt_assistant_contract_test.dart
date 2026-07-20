@@ -6,6 +6,29 @@ import 'package:novelai_canvas/data/api/danbooru/danbooru_service.dart';
 import 'package:novelai_canvas/data/api/llm/llm_chat_service.dart';
 
 void main() {
+  test('LLM 获取 OpenAI 兼容模型列表并排序去重', () async {
+    final adapter = _RoutingAdapter((options) {
+      expect(options.method, 'GET');
+      expect(options.path, 'https://llm.example.com/v1/models');
+      expect(options.headers['Authorization'], 'Bearer secret');
+      return {
+        'data': [
+          {'id': 'z-model'},
+          {'id': 'a-model'},
+          {'id': 'a-model'},
+        ],
+      };
+    });
+    final service = LlmChatService(Dio()..httpClientAdapter = adapter);
+
+    final models = await service.listModels(
+      baseUrl: 'https://llm.example.com',
+      apiKey: 'secret',
+    );
+
+    expect(models, ['a-model', 'z-model']);
+  });
+
   test('LLM Chat 使用独立 OpenAI 兼容请求并解析文本', () async {
     final adapter = _RoutingAdapter((options) {
       expect(options.path, 'https://llm.example.com/v1/chat/completions');

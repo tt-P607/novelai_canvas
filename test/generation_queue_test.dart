@@ -44,6 +44,52 @@ void main() {
     await queue.dispose();
   });
 
+  test('唤醒锁调用悬空时仍会立即执行生成请求', () async {
+    final history = _MemoryHistoryRepository();
+    final generation = _FakeGenerationRepository();
+    final wakeLockCompleter = Completer<void>();
+    final queue = GenerationQueue(
+      generationRepository: generation,
+      historyRepository: history,
+      imageStore: _MemoryImageStore(),
+      wakeLockSetter: (_) => wakeLockCompleter.future,
+    );
+
+    await queue.enqueue(_task('wake-lock-pending'));
+    await _waitFor(() => generation.executedIds.isNotEmpty);
+
+    expect(generation.executedIds, ['wake-lock-pending']);
+    wakeLockCompleter.complete();
+    await _waitFor(
+      () =>
+          history.items['wake-lock-pending']?.status ==
+          GenerationTaskStatus.completed,
+    );
+    await queue.dispose();
+  });
+
+  test('唤醒锁调用失败时仍会执行生成请求', () async {
+    final history = _MemoryHistoryRepository();
+    final generation = _FakeGenerationRepository();
+    final queue = GenerationQueue(
+      generationRepository: generation,
+      historyRepository: history,
+      imageStore: _MemoryImageStore(),
+      wakeLockSetter: (_) =>
+          Future<void>.error(StateError('plugin unavailable')),
+    );
+
+    await queue.enqueue(_task('wake-lock-error'));
+    await _waitFor(
+      () =>
+          history.items['wake-lock-error']?.status ==
+          GenerationTaskStatus.completed,
+    );
+
+    expect(generation.executedIds, ['wake-lock-error']);
+    await queue.dispose();
+  });
+
   test('429 会进入冷却并自动重试', () async {
     final history = _MemoryHistoryRepository();
     final generation = _FakeGenerationRepository(rateLimitOnce: true);

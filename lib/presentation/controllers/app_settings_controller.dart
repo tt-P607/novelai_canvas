@@ -14,12 +14,12 @@ class AppSettingsController extends ChangeNotifier {
 
   Future<void> completeOnboarding({
     required BackendMode backendMode,
-    required String gatewayBaseUrl,
+    required String endpointBaseUrl,
   }) async {
     _settings = _settings.copyWith(
       onboardingCompleted: true,
       backendMode: backendMode,
-      gatewayBaseUrl: gatewayBaseUrl.trim(),
+      endpointBaseUrl: endpointBaseUrl.trim(),
     );
     await _repository.save(_settings);
     notifyListeners();
@@ -33,11 +33,11 @@ class AppSettingsController extends ChangeNotifier {
 
   Future<void> updateBackend({
     required BackendMode backendMode,
-    required String gatewayBaseUrl,
+    required String endpointBaseUrl,
   }) async {
     _settings = _settings.copyWith(
       backendMode: backendMode,
-      gatewayBaseUrl: gatewayBaseUrl.trim(),
+      endpointBaseUrl: endpointBaseUrl.trim(),
     );
     await _repository.save(_settings);
     notifyListeners();

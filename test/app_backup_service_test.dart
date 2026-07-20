@@ -18,13 +18,13 @@ void main() {
         const AppSettings(
           onboardingCompleted: true,
           backendMode: BackendMode.gateway,
-          gatewayBaseUrl: 'https://gateway.example.com',
+          endpointBaseUrl: 'https://gateway.example.com',
         ),
       ),
       llmSettingsRepository: _MemoryLlmSettingsRepository(
         const LlmAssistantSettings(
           model: 'text-model',
-          prompts: PromptTemplateSet(keywordExtraction: '自定义提取'),
+          prompts: PromptTemplateSet(agentPrompt: '自定义提取'),
         ),
       ),
       historyRepository: history,
@@ -60,7 +60,7 @@ void main() {
       'app_settings': {
         'onboarding_completed': true,
         'backend_mode': 'gateway',
-        'gateway_base_url': 'https://restored.example.com',
+        'endpoint_base_url': 'https://restored.example.com',
       },
       'llm_assistant_settings': {
         'provider_name': '自建 LLM',
@@ -78,7 +78,7 @@ void main() {
 
     expect(result.importedHistoryCount, 2);
     expect(appRepository.value.backendMode, BackendMode.gateway);
-    expect(appRepository.value.gatewayBaseUrl, 'https://restored.example.com');
+    expect(appRepository.value.endpointBaseUrl, 'https://restored.example.com');
     expect(llmRepository.value.model, 'assistant-model');
     expect(history.items.keys, containsAll(['existing', 'new']));
     expect(history.items.length, 2);

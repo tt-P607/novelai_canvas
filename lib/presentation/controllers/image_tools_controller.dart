@@ -1,10 +1,42 @@
+import 'dart:io';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:uuid/uuid.dart';
 
 import '../../core/errors/app_exception.dart';
+import '../../core/network/network_error_mapper.dart';
 import '../../core/storage/generation_image_store.dart';
 import '../../domain/entities/tag_suggestion.dart';
 import '../../domain/repositories/image_tools_repository.dart';
+
+const directorEmotionPrompts = <String, String>{
+  '中性': 'neutral',
+  '开心': 'happy',
+  '悲伤': 'sad',
+  '生气': 'angry',
+  '害怕': 'scared',
+  '惊讶': 'surprised',
+  '疲惫': 'tired',
+  '兴奋': 'excited',
+  '紧张': 'nervous',
+  '思考': 'thinking',
+  '困惑': 'confused',
+  '害羞': 'shy',
+  '厌恶': 'disgusted',
+  '得意': 'smug',
+  '无聊': 'bored',
+  '大笑': 'laughing',
+  '烦躁': 'irritated',
+  '脸红': 'aroused',
+  '尴尬': 'embarrassed',
+  '担忧': 'worried',
+  '爱意': 'love',
+  '坚定': 'determined',
+  '受伤': 'hurt',
+  '俏皮': 'playful',
+};
 
 class ImageToolsController extends ChangeNotifier {
   ImageToolsController({
@@ -24,6 +56,7 @@ class ImageToolsController extends ChangeNotifier {
   int height = 1024;
   DirectorTool selectedTool = DirectorTool.declutter;
   String prompt = '';
+  String selectedEmotion = '中性';
   int defry = 0;
   bool isRunning = false;
   String? errorMessage;
@@ -32,10 +65,21 @@ class ImageToolsController extends ChangeNotifier {
   int? anlasCost;
   List<TagSuggestion> suggestions = const [];
 
-  void setSourceImage(String? path) {
+  Future<void> setSourceImage(String? path) async {
     sourceImagePath = path;
     resultBytes = null;
     resultPath = null;
+    if (path != null && path.isNotEmpty) {
+      try {
+        final decoded = img.decodeImage(await File(path).readAsBytes());
+        if (decoded != null) {
+          width = decoded.width;
+          height = decoded.height;
+        }
+      } catch (_) {
+        errorMessage = '无法读取图片尺寸。';
+      }
+    }
     notifyListeners();
   }
 
@@ -52,6 +96,11 @@ class ImageToolsController extends ChangeNotifier {
 
   void updatePrompt(String value) => prompt = value;
 
+  void selectEmotion(String value) {
+    selectedEmotion = value;
+    notifyListeners();
+  }
+
   void updateDefry(double value) {
     defry = value.round();
     notifyListeners();
@@ -64,16 +113,18 @@ class ImageToolsController extends ChangeNotifier {
 
   Future<void> applyDirectorTool() => _run(() async {
     final path = _requireImagePath();
-    if ({DirectorTool.colorize, DirectorTool.emotion}.contains(selectedTool) &&
-        prompt.trim().isEmpty) {
-      throw StateError('上色和表情工具需要填写提示词。');
-    }
+    final guidance = selectedTool == DirectorTool.emotion
+        ? [
+            directorEmotionPrompts[selectedEmotion] ?? 'neutral',
+            prompt.trim(),
+          ].where((value) => value.isNotEmpty).join(', ')
+        : prompt.trim();
     return _repository.applyDirectorTool(
       tool: selectedTool,
       imagePath: path,
       width: width,
       height: height,
-      prompt: prompt.trim(),
+      prompt: guidance,
       defry: defry,
     );
   });
@@ -125,6 +176,12 @@ class ImageToolsController extends ChangeNotifier {
     }
   }
 
+  Future<void> useResultAsSource() async {
+    final path = resultPath;
+    if (path == null || path.isEmpty) return;
+    await setSourceImage(path);
+  }
+
   String _requireImagePath() {
     final path = sourceImagePath;
     if (path == null || path.isEmpty) throw StateError('请先选择源图片。');
@@ -133,6 +190,9 @@ class ImageToolsController extends ChangeNotifier {
 
   String _friendlyError(Object error) {
     if (error is AppException) return error.message;
+    if (error is DioException) {
+      return NetworkErrorMapper.map(error).message;
+    }
     return error.toString().replaceFirst('Bad state: ', '');
   }
 

@@ -27,6 +27,7 @@ import '../../data/api/native/services/native_user_service.dart';
 import '../../data/datasources/local/app_preferences.dart';
 import '../../data/datasources/local/generation_database.dart';
 import '../../data/datasources/local/llm_assistant_preferences.dart';
+import '../../data/datasources/local/prompt_chat_preferences.dart';
 import '../../data/repositories/app_settings_repository_impl.dart';
 import '../../data/repositories/flutter_secure_credential_store.dart';
 import '../../data/repositories/generation_history_repository_impl.dart';
@@ -55,6 +56,7 @@ import '../network/api_mode_router.dart';
 import '../network/backend_connection_service.dart';
 import '../network/bearer_token_interceptor.dart';
 import '../network/dio_factory.dart';
+import '../network/native_endpoint_interceptor.dart';
 import '../queue/generation_queue.dart';
 import '../storage/generation_image_store.dart';
 
@@ -74,12 +76,16 @@ Future<void> configureDependencies() async {
   getIt.registerLazySingleton<LlmAssistantPreferences>(
     () => LlmAssistantPreferences(getIt()),
   );
+  getIt.registerLazySingleton<PromptChatPreferences>(
+    () => PromptChatPreferences(getIt()),
+  );
 
   const secureStorage = FlutterSecureStorage(
     aOptions: AndroidOptions(),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
   getIt.registerSingleton<FlutterSecureStorage>(secureStorage);
+  await AppConstants.migrateImageCredential(secureStorage);
   getIt.registerLazySingleton<SecureCredentialStore>(
     () => FlutterSecureCredentialStore(getIt()),
   );
@@ -92,6 +98,7 @@ Future<void> configureDependencies() async {
     AppSettingsController(getIt(), settings),
   );
 
+  getIt.registerLazySingleton(() => LlmChatService(Dio()));
   getIt.registerLazySingleton<LlmAssistantSettingsRepository>(
     () => LlmAssistantSettingsRepositoryImpl(getIt()),
   );
@@ -100,6 +107,7 @@ Future<void> configureDependencies() async {
     LlmAssistantSettingsController(
       repository: getIt(),
       credentialStore: getIt(),
+      llmService: getIt(),
       initialSettings: llmSettings,
     ),
   );
@@ -115,10 +123,15 @@ Future<void> configureDependencies() async {
   getIt.registerLazySingleton<Dio>(
     () => DioFactory.createNative()
       ..interceptors.add(
+        NativeEndpointInterceptor(
+          settingsProvider: () => getIt<AppSettingsController>().settings,
+        ),
+      )
+      ..interceptors.add(
         BearerTokenInterceptor(
           credentialStore: getIt(),
-          credentialKey: AppConstants.novelAiCredentialKey,
-          missingCredentialMessage: '请先在设置中填写 NovelAI Token。',
+          credentialKey: AppConstants.imageApiCredentialKey,
+          missingCredentialMessage: '请先在设置中填写接口密钥。',
         ),
       )
       ..interceptors.add(getIt<ApiInspector>()),
@@ -129,8 +142,8 @@ Future<void> configureDependencies() async {
       ..interceptors.add(
         BearerTokenInterceptor(
           credentialStore: getIt(),
-          credentialKey: AppConstants.gatewayCredentialKey,
-          missingCredentialMessage: '请先在设置中填写网关 API Key。',
+          credentialKey: AppConstants.imageApiCredentialKey,
+          missingCredentialMessage: '请先在设置中填写接口密钥。',
         ),
       )
       ..interceptors.add(getIt<ApiInspector>()),
@@ -147,7 +160,6 @@ Future<void> configureDependencies() async {
   final nativeDio = getIt<Dio>(instanceName: ServiceNames.nativeDio);
   final gatewayDio = getIt<Dio>(instanceName: ServiceNames.gatewayDio);
   getIt.registerLazySingleton(() => BackendConnectionService(getIt()));
-  getIt.registerLazySingleton(() => LlmChatService(Dio()));
   getIt.registerLazySingleton(() => DanbooruService(Dio()));
 
   getIt.registerLazySingleton(() => NativeTextToImageService(nativeDio));
@@ -231,6 +243,7 @@ Future<void> configureDependencies() async {
       historyRepository: getIt(),
       backendModeProvider: () =>
           getIt<AppSettingsController>().settings.backendMode,
+      preferences: getIt(),
     ),
   );
   getIt.registerLazySingleton(
@@ -259,6 +272,7 @@ Future<void> configureDependencies() async {
     () => PromptAssistantController(
       repository: getIt(),
       settingsController: getIt(),
+      preferences: getIt(),
     ),
   );
   await getIt<HistoryController>().load();

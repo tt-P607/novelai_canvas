@@ -30,71 +30,63 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late BackendMode _mode;
-  late final TextEditingController _gatewayUrlController;
-  late final TextEditingController _novelAiTokenController;
-  late final TextEditingController _gatewayKeyController;
+  late final TextEditingController _endpointUrlController;
+  late final TextEditingController _apiKeyController;
   bool _loadingSecrets = true;
   bool _saving = false;
-  bool _obscureNovelAiToken = true;
-  bool _obscureGatewayKey = true;
+  bool _obscureApiKey = true;
 
   @override
   void initState() {
     super.initState();
     final settings = widget.controller.settings;
     _mode = settings.backendMode;
-    _gatewayUrlController = TextEditingController(
-      text: settings.gatewayBaseUrl,
+    _endpointUrlController = TextEditingController(
+      text: settings.endpointBaseUrl,
     );
-    _novelAiTokenController = TextEditingController();
-    _gatewayKeyController = TextEditingController();
-    _loadSecrets();
+    _apiKeyController = TextEditingController();
+    _loadSecret();
   }
 
-  Future<void> _loadSecrets() async {
-    final values = await Future.wait([
-      widget.credentialStore.read(AppConstants.novelAiCredentialKey),
-      widget.credentialStore.read(AppConstants.gatewayCredentialKey),
-    ]);
+  Future<void> _loadSecret() async {
+    final value = await widget.credentialStore.read(
+      AppConstants.imageApiCredentialKey,
+    );
     if (!mounted) return;
-    _novelAiTokenController.text = values[0] ?? '';
-    _gatewayKeyController.text = values[1] ?? '';
+    _apiKeyController.text = value ?? '';
     setState(() => _loadingSecrets = false);
   }
 
   @override
   void dispose() {
-    _gatewayUrlController.dispose();
-    _novelAiTokenController.dispose();
-    _gatewayKeyController.dispose();
+    _endpointUrlController.dispose();
+    _apiKeyController.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    final gatewayUrl = _gatewayUrlController.text.trim();
-    if (_mode == BackendMode.gateway) {
-      final uri = Uri.tryParse(gatewayUrl);
-      if (uri == null ||
-          !uri.hasScheme ||
-          !uri.hasAuthority ||
-          (uri.scheme != 'http' && uri.scheme != 'https')) {
-        _showMessage('网关模式需要有效的 http:// 或 https:// 地址。');
-        return;
-      }
+    final endpointUrl = _endpointUrlController.text.trim();
+    if (endpointUrl.isEmpty) {
+      _showMessage('接口 URL 不能为空。');
+      return;
+    }
+    final uri = Uri.tryParse(endpointUrl);
+    if (uri == null ||
+        !uri.hasScheme ||
+        !uri.hasAuthority ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      _showMessage('接口 URL 需要是完整的 http:// 或 https:// 地址。');
+      return;
     }
 
     setState(() => _saving = true);
     await widget.controller.updateBackend(
       backendMode: _mode,
-      gatewayBaseUrl: gatewayUrl,
+      endpointBaseUrl: endpointUrl,
     );
     await _writeOrDelete(
-      AppConstants.novelAiCredentialKey,
-      _novelAiTokenController.text.trim(),
-    );
-    await _writeOrDelete(
-      AppConstants.gatewayCredentialKey,
-      _gatewayKeyController.text.trim(),
+      AppConstants.imageApiCredentialKey,
+      _apiKeyController.text.trim(),
     );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -132,7 +124,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          '默认后端',
+                          '接口格式',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 16),
@@ -144,7 +136,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                   label: Text(
                                     mode == BackendMode.native
                                         ? '原生接口'
-                                        : '自建网关',
+                                        : 'OpenAI 接口',
                                   ),
                                 ),
                               )
@@ -156,13 +148,18 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                         const SizedBox(height: 18),
                         TextField(
-                          controller: _gatewayUrlController,
+                          controller: _endpointUrlController,
                           keyboardType: TextInputType.url,
                           autocorrect: false,
-                          decoration: const InputDecoration(
-                            labelText: '网关 Base URL',
-                            hintText: 'https://example.com',
-                            prefixIcon: Icon(Icons.link_rounded),
+                          decoration: InputDecoration(
+                            labelText: '接口 URL',
+                            hintText: _mode == BackendMode.native
+                                ? AppConstants.nativeBaseUrl
+                                : 'https://example.com',
+                            helperText: _mode == BackendMode.native
+                                ? '可填写根地址或完整生成地址；软件会移除 /ai/generate-image，再按请求自动补全 /_api 和具体路径。'
+                                : '填写 OpenAI 兼容服务地址，无需在末尾填写 /v1。',
+                            prefixIcon: const Icon(Icons.link_rounded),
                           ),
                         ),
                       ],
@@ -177,7 +174,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          '安全凭据',
+                          '接口密钥',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 8),
@@ -185,42 +182,22 @@ class _SettingsPageState extends State<SettingsPage> {
                           const LinearProgressIndicator()
                         else ...[
                           TextField(
-                            controller: _novelAiTokenController,
-                            obscureText: _obscureNovelAiToken,
+                            controller: _apiKeyController,
+                            obscureText: _obscureApiKey,
                             autocorrect: false,
                             enableSuggestions: false,
                             decoration: InputDecoration(
-                              labelText: 'NovelAI Token',
+                              labelText: '密钥',
+                              hintText: _mode == BackendMode.native
+                                  ? 'NovelAI Token'
+                                  : 'API Key（按服务要求填写）',
                               prefixIcon: const Icon(Icons.key_rounded),
                               suffixIcon: IconButton(
                                 onPressed: () => setState(
-                                  () => _obscureNovelAiToken =
-                                      !_obscureNovelAiToken,
+                                  () => _obscureApiKey = !_obscureApiKey,
                                 ),
                                 icon: Icon(
-                                  _obscureNovelAiToken
-                                      ? Icons.visibility_rounded
-                                      : Icons.visibility_off_rounded,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          TextField(
-                            controller: _gatewayKeyController,
-                            obscureText: _obscureGatewayKey,
-                            autocorrect: false,
-                            enableSuggestions: false,
-                            decoration: InputDecoration(
-                              labelText: '网关 API Key（可选）',
-                              prefixIcon: const Icon(Icons.vpn_key_rounded),
-                              suffixIcon: IconButton(
-                                onPressed: () => setState(
-                                  () =>
-                                      _obscureGatewayKey = !_obscureGatewayKey,
-                                ),
-                                icon: Icon(
-                                  _obscureGatewayKey
+                                  _obscureApiKey
                                       ? Icons.visibility_rounded
                                       : Icons.visibility_off_rounded,
                                 ),
@@ -240,9 +217,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       color: colors.primary,
                     ),
                     title: const Text('提示词助手'),
-                    subtitle: const Text(
-                      'LLM 连接、模型、Danbooru、Vision 与四套可编辑 Prompt',
-                    ),
+                    subtitle: const Text('单模型对话、图片附件、Danbooru 工具、会话归档与自动填入'),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => Navigator.of(context).push<void>(
                       MaterialPageRoute(
@@ -330,7 +305,7 @@ class _SettingsHero extends StatelessWidget {
               ),
               const SizedBox(height: 5),
               Text(
-                '生图后端与提示词助手分别配置；所有密钥只写入系统 Keychain / Keystore。',
+                '上方仅切换请求格式；URL 与密钥共用一套配置，并只保存在本机安全存储中。',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
                   height: 1.45,
@@ -388,7 +363,9 @@ class _DataManagementCard extends StatelessWidget {
           children: [
             Text('数据与备份', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            const Text('备份包含非敏感设置、四套 Prompt 和生成历史参数；不会导出任何 API Key 或 Token。'),
+            const Text(
+              '备份包含非敏感设置、Agent Prompt 和生成历史参数；不会导出任何 API Key 或 Token。',
+            ),
             const SizedBox(height: 14),
             OutlinedButton.icon(
               onPressed: controller.busy
@@ -433,7 +410,7 @@ class _DataManagementCard extends StatelessWidget {
                         context,
                         title: '清除全部安全凭据',
                         content:
-                            '将从系统 Keychain / Keystore 删除 NovelAI Token、网关 Key 和 LLM Key。此操作不可撤销。',
+                            '将从系统 Keychain / Keystore 删除生图接口密钥和 LLM Key。此操作不可撤销。',
                       );
                       if (!confirmed) return;
                       try {

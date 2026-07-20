@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/network_error_mapper.dart';
 import '../../../../domain/entities/subscription_info.dart';
 import '../../common/json_helpers.dart';
@@ -12,9 +11,7 @@ class NativeSubscriptionService {
 
   Future<SubscriptionInfo> getSubscription() async {
     try {
-      final response = await client.get<Object?>(
-        '${AppConstants.nativeUserBaseUrl}/user/subscription',
-      );
+      final response = await client.get<Object?>('/user/subscription');
       final json = asJsonMap(response.data);
       final expires = (json['expiresAt'] as num?)?.toInt();
       return SubscriptionInfo(

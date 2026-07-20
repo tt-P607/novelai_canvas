@@ -45,7 +45,10 @@ class NovelAiCanvasApp extends StatelessWidget {
                       getIt<LlmAssistantSettingsController>(),
                   dataManagementController: getIt<DataManagementController>(),
                 )
-              : OnboardingPage(controller: settingsController),
+              : OnboardingPage(
+                  controller: settingsController,
+                  credentialStore: getIt<SecureCredentialStore>(),
+                ),
         );
       },
     );

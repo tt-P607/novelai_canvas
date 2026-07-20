@@ -96,7 +96,7 @@ class GenerationRepositoryImpl implements GenerationRepository {
   @override
   Stream<GenerationPreview> stream(GenerationTask task) async* {
     if (task.spec.backendMode != BackendMode.native) {
-      throw const UnsupportedFeatureException('渐进式中间预览仅支持 NovelAI 原生后端。');
+      throw const UnsupportedFeatureException('流式生成仅支持 NovelAI 原生后端。');
     }
     final cancelToken = _createCancelToken(task.id);
     try {

@@ -232,11 +232,19 @@ git push origin main
 set "JAVA_HOME=D:\Android\Android Studio\jbr" && set "PATH=D:\Android\Android Studio\jbr\bin;%PATH%" && flutter build apk --release
 ```
 
-产物：
+构建产物：
 
 ```text
 build\app\outputs\flutter-apk\app-release.apk
 ```
+
+对用户交付的固定发布目录必须是项目内的：
+
+```text
+release\app-release.apk
+```
+
+即工作区绝对路径 `E:\novelai_iOS\novelai_canvas\release\app-release.apk`。每次构建成功后必须从 `build\app\outputs\flutter-apk\app-release.apk` 覆盖复制到这里；禁止再复制到相邻的 `NAI-WorldPainter\release` 目录。可另外保留带版本号的副本，例如 `release\NovelAI-Canvas-v1.0.2-build3.apk`。
 
 如果存在 `android/key.properties`，使用正式 keystore；不存在时回退到 debug key 生成可侧载 Release APK。
 

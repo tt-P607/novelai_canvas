@@ -35,15 +35,19 @@ class ApiModeRouter {
   Dio get activeClient => clientFor(activeMode);
 
   Dio _configuredGatewayClient() {
-    final gatewayBaseUrl = _settingsProvider().gatewayBaseUrl.trim();
-    if (gatewayBaseUrl.isEmpty) {
-      throw const ConfigurationException('请先配置 OpenAI 兼容网关地址。');
+    final endpointBaseUrl = _settingsProvider().effectiveBaseUrl;
+    if (endpointBaseUrl.isEmpty) {
+      throw const ConfigurationException('请先配置 OpenAI 接口地址。');
     }
-    _gatewayClient.options.baseUrl = _normalizeBaseUrl(gatewayBaseUrl);
+    _gatewayClient.options.baseUrl = _normalizeBaseUrl(endpointBaseUrl);
     return _gatewayClient;
   }
 
   String _normalizeBaseUrl(String value) {
-    return value.endsWith('/') ? value.substring(0, value.length - 1) : value;
+    var normalized = value.trim().replaceAll(RegExp(r'/+$'), '');
+    if (normalized.endsWith('/v1')) {
+      normalized = normalized.substring(0, normalized.length - 3);
+    }
+    return normalized;
   }
 }

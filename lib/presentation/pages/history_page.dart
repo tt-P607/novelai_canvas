@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 
+import '../widgets/fullscreen_image_preview.dart';
+
 import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/history_controller.dart';
@@ -112,9 +114,14 @@ class _HistoryPageState extends State<HistoryPage> {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
           children: [
             if (task.imagePath != null && File(task.imagePath!).existsSync())
-              ClipRRect(
+              InkWell(
                 borderRadius: BorderRadius.circular(20),
-                child: Image.file(File(task.imagePath!)),
+                onTap: () =>
+                    FullscreenImagePreview.showFile(context, task.imagePath!),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.file(File(task.imagePath!)),
+                ),
               ),
             const SizedBox(height: 16),
             Text(
@@ -181,9 +188,20 @@ class _HistoryPageState extends State<HistoryPage> {
     try {
       await ImageGallerySaverPlus.saveFile(path);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('图片已保存到系统相册。')));
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 10),
+                Text('已保存到系统相册'),
+              ],
+            ),
+          ),
+        );
     } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(

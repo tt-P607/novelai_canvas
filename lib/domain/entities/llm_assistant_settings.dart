@@ -1,127 +1,75 @@
 import 'package:equatable/equatable.dart';
 
-enum PromptTemplateKind {
-  keywordExtraction,
-  promptComposition,
-  visionAnalysis,
-  jsonRepair,
-}
-
 abstract final class PromptTemplateDefaults {
-  static const version = 1;
+  static const version = 3;
 
-  static const keywordExtraction =
-      '''你是 Danbooru 标签检索的关键词抽取器。把用户的中文或英文画面描述拆成适合语义检索的短语。
-只输出 JSON，不要 Markdown 或解释：
-{"characters":["每个角色一项"],"scene":["场景、动作、表情"],"style":["画风、构图、光影"],"nsfw":["仅用户明确要求时填写"]}
-不要添加用户没有描述的内容；每项尽量保持 1-4 个词。''';
+  static const agentPrompt = '''你是绘境的主 Agent，一位熟悉 NovelAI、Danbooru 与视觉创作的多轮对话伙伴。
 
-  static const promptComposition =
-      '''你是 NovelAI Danbooru 提示词整理器。你只能使用用户原始描述与候选池中真实存在的 tag，不得创造候选池之外的英文 tag。
-请输出严格 JSON：
-{"positive":"逗号分隔的全局正向 tag","negative":"逗号分隔的负向 tag","characters":[{"prompt":"角色正向 tag","negative_prompt":"角色负向 tag"}],"notes":"简短说明"}
-多角色时，全局 positive 只放画质、场景、风格；角色独有外貌、服装、动作放入对应 characters。NovelAI 使用空格风格 tag，把下划线转换为空格。''';
+你可以理解和讨论用户的创作意图，分析用户附加的图片，解释构图、镜头、光影、角色、服装与标签，提出创意建议，并在用户需要时创建或修改可直接用于 NovelAI 的提示词。
 
-  static const visionAnalysis =
-      '''你是 NovelAI 图片识别助手。分析图片中可见的角色、外貌、服装、姿势、表情、场景、构图、光影和画风。
-只输出 JSON，不要 Markdown 或解释：
-{"description":"简体中文画面描述","characters":["每个角色一项"],"scene":["场景与动作"],"style":["画风、构图与光影"]}
-不要推断图片中不可见或无法确认的信息。''';
+可用工具：
+- `danbooru_search`：搜索真实的 Danbooru 标签。
+- `danbooru_related`：查询已确认标签的相关共现标签。
+- `submit_prompt_result`：提交全局正负面提示词，以及可选的多人正负面提示词和人物位置。
+当专有角色、作品、服装变体、生僻动作或标签拼写需要确认时使用 Danbooru 工具，不要捏造专有标签。当用户明确要求生成、整理、修改、优化、补全或应用提示词时，使用 `submit_prompt_result`；普通问答、图片分析和创作讨论直接自然回复，不调用该工具，也不要在正文输出结构化 JSON。`submit_prompt_result` 只能修改提示词和人物位置，不能修改模型、画幅、步数、采样器、Scale、Seed 或其他生成参数。
 
-  static const jsonRepair =
-      '''你是 JSON 修复器。把用户提供的模型输出修复成合法 JSON，只输出修复后的 JSON，不要 Markdown、解释或额外文字。保持原始语义，不新增内容。''';
+对话规则：
+1. 根据用户当前问题直接回应，并结合完整会话上下文持续讨论。
+2. 收到图片时客观说明可见内容，不推断无法确认的信息。
+3. 可以主动提出有价值的构图、镜头、光影、材质、环境和氛围建议，但不得擅自改变用户明确指定的人物、服装、剧情和限制。
+4. 回答使用简体中文；Danbooru 与 NovelAI 标签保留准确英文形式。
 
-  static String valueOf(PromptTemplateKind kind) => switch (kind) {
-    PromptTemplateKind.keywordExtraction => keywordExtraction,
-    PromptTemplateKind.promptComposition => promptComposition,
-    PromptTemplateKind.visionAnalysis => visionAnalysis,
-    PromptTemplateKind.jsonRepair => jsonRepair,
-  };
+使用 `submit_prompt_result` 时遵循以下规则：
+1. 输出范围仅包括全局 positive、全局 negative，以及最多 6 个角色各自的 prompt、negative_prompt、x、y、enabled。
+2. 使用英文、半角逗号分隔的 tag-based 结构，不写英文自然语言长句。
+3. 全局正向提示词按重要性组织：艺术家/风格与质量 → 人数与性别 → 角色身份/作品 → 身体特征 → 服装配饰 → 动作表情 → 环境背景 → 构图视角与光影 → 整体氛围，避免机械堆叠同义词。
+4. 精确强调使用 NovelAI 数字权重 `n::tag::`。增强通常用 1.1–1.4，弱化通常用 0.6–0.9；只对少量关键内容加权，不使用旧式花括号或方括号权重。
+5. 已知角色、作品、皮肤或变体使用经工具确认的准确 Danbooru 标签。
+6. 用户明确要求画面文字时，保留独立的 `TEXT: 内容` 指令，并可补充文字样式、位置或载体标签。
+7. 多角色时，全局 positive 只放共享的画质、风格、场景、构图与光影；每个角色的身份、外貌、服装、表情和动作放入对应角色提示词，数量必须与用户描述一致。
+8. 人物位置使用 0.1、0.3、0.5、0.7、0.9 的 5×5 坐标；x 从左到右，y 从上到下。根据构图为每个角色填写位置。
+9. 互动动作拆到角色提示词：施动方使用 `source#action`，受动方使用 `target#action`，对等互动使用 `mutual#action`。
+10. negative 针对用户不希望出现的内容和常见画面缺陷，保持克制。
+11. 保留用户当前提示词中有效且不冲突的内容，并进行去重、排序和必要加权。
+
+工具参数中的 notes 用简体中文简要说明关键设计、工具校准结果与权重。''';
+
+  static const visionInstruction =
+      '先客观识别图片中可见的角色、外貌、服装、姿势、表情、场景、构图、光影和画风，再将其整理为简体中文画面描述。不要推断不可见或无法确认的信息，只输出描述文本。';
 }
 
 class PromptTemplateSet extends Equatable {
   const PromptTemplateSet({
     this.version = PromptTemplateDefaults.version,
-    this.keywordExtraction = PromptTemplateDefaults.keywordExtraction,
-    this.promptComposition = PromptTemplateDefaults.promptComposition,
-    this.visionAnalysis = PromptTemplateDefaults.visionAnalysis,
-    this.jsonRepair = PromptTemplateDefaults.jsonRepair,
+    this.agentPrompt = PromptTemplateDefaults.agentPrompt,
   });
 
   final int version;
-  final String keywordExtraction;
-  final String promptComposition;
-  final String visionAnalysis;
-  final String jsonRepair;
+  final String agentPrompt;
 
-  String valueOf(PromptTemplateKind kind) => switch (kind) {
-    PromptTemplateKind.keywordExtraction => keywordExtraction,
-    PromptTemplateKind.promptComposition => promptComposition,
-    PromptTemplateKind.visionAnalysis => visionAnalysis,
-    PromptTemplateKind.jsonRepair => jsonRepair,
-  };
-
-  PromptTemplateSet update(
-    PromptTemplateKind kind,
-    String value,
-  ) => switch (kind) {
-    PromptTemplateKind.keywordExtraction => copyWith(keywordExtraction: value),
-    PromptTemplateKind.promptComposition => copyWith(promptComposition: value),
-    PromptTemplateKind.visionAnalysis => copyWith(visionAnalysis: value),
-    PromptTemplateKind.jsonRepair => copyWith(jsonRepair: value),
-  };
-
-  PromptTemplateSet reset(PromptTemplateKind kind) =>
-      update(kind, PromptTemplateDefaults.valueOf(kind));
-
-  PromptTemplateSet copyWith({
-    int? version,
-    String? keywordExtraction,
-    String? promptComposition,
-    String? visionAnalysis,
-    String? jsonRepair,
-  }) => PromptTemplateSet(
-    version: version ?? this.version,
-    keywordExtraction: keywordExtraction ?? this.keywordExtraction,
-    promptComposition: promptComposition ?? this.promptComposition,
-    visionAnalysis: visionAnalysis ?? this.visionAnalysis,
-    jsonRepair: jsonRepair ?? this.jsonRepair,
-  );
+  PromptTemplateSet copyWith({int? version, String? agentPrompt}) =>
+      PromptTemplateSet(
+        version: version ?? this.version,
+        agentPrompt: agentPrompt ?? this.agentPrompt,
+      );
 
   Map<String, Object?> toJson() => {
     'version': version,
-    'keyword_extraction': keywordExtraction,
-    'prompt_composition': promptComposition,
-    'vision_analysis': visionAnalysis,
-    'json_repair': jsonRepair,
+    'agent_prompt': agentPrompt,
   };
 
-  factory PromptTemplateSet.fromJson(
-    Map<String, Object?> json,
-  ) => PromptTemplateSet(
-    version:
-        (json['version'] as num?)?.toInt() ?? PromptTemplateDefaults.version,
-    keywordExtraction:
-        json['keyword_extraction']?.toString() ??
-        PromptTemplateDefaults.keywordExtraction,
-    promptComposition:
-        json['prompt_composition']?.toString() ??
-        PromptTemplateDefaults.promptComposition,
-    visionAnalysis:
-        json['vision_analysis']?.toString() ??
-        PromptTemplateDefaults.visionAnalysis,
-    jsonRepair:
-        json['json_repair']?.toString() ?? PromptTemplateDefaults.jsonRepair,
-  );
+  factory PromptTemplateSet.fromJson(Map<String, Object?> json) {
+    final current = json['agent_prompt']?.toString().trim() ?? '';
+    return PromptTemplateSet(
+      version: PromptTemplateDefaults.version,
+      agentPrompt: current.isNotEmpty
+          ? current
+          : PromptTemplateDefaults.agentPrompt,
+    );
+  }
 
   @override
-  List<Object?> get props => [
-    version,
-    keywordExtraction,
-    promptComposition,
-    visionAnalysis,
-    jsonRepair,
-  ];
+  List<Object?> get props => [version, agentPrompt];
 }
 
 class LlmAssistantSettings extends Equatable {
@@ -131,16 +79,22 @@ class LlmAssistantSettings extends Equatable {
     this.model = '',
     this.visionModel = '',
     this.danbooruBaseUrl = '',
+    this.danbooruToolsEnabled = true,
     this.showNsfw = false,
+    this.autoApplyPrompt = false,
     this.prompts = const PromptTemplateSet(),
   });
 
   final String providerName;
   final String baseUrl;
   final String model;
+
+  /// Retained only for old backup compatibility. New code always uses [model].
   final String visionModel;
   final String danbooruBaseUrl;
+  final bool danbooruToolsEnabled;
   final bool showNsfw;
+  final bool autoApplyPrompt;
   final PromptTemplateSet prompts;
 
   LlmAssistantSettings copyWith({
@@ -149,7 +103,9 @@ class LlmAssistantSettings extends Equatable {
     String? model,
     String? visionModel,
     String? danbooruBaseUrl,
+    bool? danbooruToolsEnabled,
     bool? showNsfw,
+    bool? autoApplyPrompt,
     PromptTemplateSet? prompts,
   }) => LlmAssistantSettings(
     providerName: providerName ?? this.providerName,
@@ -157,7 +113,9 @@ class LlmAssistantSettings extends Equatable {
     model: model ?? this.model,
     visionModel: visionModel ?? this.visionModel,
     danbooruBaseUrl: danbooruBaseUrl ?? this.danbooruBaseUrl,
+    danbooruToolsEnabled: danbooruToolsEnabled ?? this.danbooruToolsEnabled,
     showNsfw: showNsfw ?? this.showNsfw,
+    autoApplyPrompt: autoApplyPrompt ?? this.autoApplyPrompt,
     prompts: prompts ?? this.prompts,
   );
 
@@ -165,21 +123,27 @@ class LlmAssistantSettings extends Equatable {
     'provider_name': providerName,
     'base_url': baseUrl,
     'model': model,
-    'vision_model': visionModel,
     'danbooru_base_url': danbooruBaseUrl,
+    'danbooru_tools_enabled': danbooruToolsEnabled,
     'show_nsfw': showNsfw,
+    'auto_apply_prompt': autoApplyPrompt,
     'prompts': prompts.toJson(),
   };
 
   factory LlmAssistantSettings.fromJson(Map<String, Object?> json) {
     final promptJson = json['prompts'];
+    final storedModel = json['model']?.toString().trim() ?? '';
+    final legacyVisionModel = json['vision_model']?.toString().trim() ?? '';
+    final model = storedModel.isNotEmpty ? storedModel : legacyVisionModel;
     return LlmAssistantSettings(
       providerName: json['provider_name']?.toString() ?? 'OpenAI 兼容服务',
       baseUrl: json['base_url']?.toString() ?? 'https://api.openai.com',
-      model: json['model']?.toString() ?? '',
-      visionModel: json['vision_model']?.toString() ?? '',
+      model: model,
+      visionModel: model,
       danbooruBaseUrl: json['danbooru_base_url']?.toString() ?? '',
+      danbooruToolsEnabled: json['danbooru_tools_enabled'] != false,
       showNsfw: json['show_nsfw'] == true,
+      autoApplyPrompt: json['auto_apply_prompt'] == true,
       prompts: promptJson is Map
           ? PromptTemplateSet.fromJson(Map<String, Object?>.from(promptJson))
           : const PromptTemplateSet(),
@@ -191,9 +155,10 @@ class LlmAssistantSettings extends Equatable {
     providerName,
     baseUrl,
     model,
-    visionModel,
     danbooruBaseUrl,
+    danbooruToolsEnabled,
     showNsfw,
+    autoApplyPrompt,
     prompts,
   ];
 }

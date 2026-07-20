@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
+
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/app_exception.dart';
 import '../../domain/entities/llm_assistant_settings.dart';
@@ -23,252 +25,369 @@ class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
   final DanbooruService _danbooruService;
   final SecureCredentialStore _credentialStore;
 
-  @override
-  Future<ExtractedKeywords> extractKeywords({
-    required String description,
-    required LlmAssistantSettings settings,
-  }) async {
-    final reply = await _complete(
-      settings: settings,
-      model: settings.model,
-      messages: [
-        {'role': 'system', 'content': settings.prompts.keywordExtraction},
-        {'role': 'user', 'content': description.trim()},
-      ],
-    );
-    final json = await _parseJson(reply, settings: settings);
-    final keywords = ExtractedKeywords.fromJson(json);
-    return keywords.isEmpty
-        ? ExtractedKeywords(characters: [description.trim()])
-        : keywords;
-  }
+  static const _danbooruTools = <Map<String, Object?>>[
+    {
+      'type': 'function',
+      'function': {
+        'name': 'danbooru_search',
+        'description': '根据自然语言、角色、作品、外观、动作或风格搜索真实 Danbooru 标签。',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'query': {'type': 'string', 'description': '要检索的关键词或描述'},
+            'limit': {'type': 'integer', 'description': '返回数量，建议 5 到 20'},
+          },
+          'required': ['query'],
+        },
+      },
+    },
+    {
+      'type': 'function',
+      'function': {
+        'name': 'danbooru_related',
+        'description': '根据已经确认的 Danbooru 标签查询相关共现标签。',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'tags': {
+              'type': 'array',
+              'items': {'type': 'string'},
+              'description': '已确认的 Danbooru 标签',
+            },
+            'limit': {'type': 'integer', 'description': '返回数量，建议 5 到 20'},
+          },
+          'required': ['tags'],
+        },
+      },
+    },
+  ];
+
+  static const _promptTools = <Map<String, Object?>>[
+    {
+      'type': 'function',
+      'function': {
+        'name': 'submit_prompt_result',
+        'description':
+            '当用户明确要求生成、整理、修改、优化、补全或应用 NovelAI 提示词时，提交全局正负面提示词，以及可选的多人正负面提示词和位置。普通问答、图片分析和创作讨论不要调用。',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'positive': {
+              'type': 'string',
+              'description': '英文半角逗号分隔的全局正向 NovelAI 标签',
+            },
+            'negative': {
+              'type': 'string',
+              'description': '英文半角逗号分隔的全局负向 NovelAI 标签',
+            },
+            'characters': {
+              'type': 'array',
+              'description': '多角色提示词；没有独立角色时传空数组，最多 6 个',
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'prompt': {'type': 'string', 'description': '该角色的正向标签'},
+                  'negative_prompt': {
+                    'type': 'string',
+                    'description': '该角色的负向标签',
+                  },
+                  'x': {
+                    'type': 'number',
+                    'description': '角色水平位置，0.1 左、0.5 中、0.9 右',
+                  },
+                  'y': {
+                    'type': 'number',
+                    'description': '角色垂直位置，0.1 上、0.5 中、0.9 下',
+                  },
+                  'enabled': {'type': 'boolean', 'description': '是否启用该角色'},
+                },
+                'required': ['prompt', 'negative_prompt', 'x', 'y', 'enabled'],
+              },
+            },
+            'notes': {'type': 'string', 'description': '用简体中文简要说明已准备的提示词'},
+          },
+          'required': ['positive', 'negative', 'characters', 'notes'],
+        },
+      },
+    },
+  ];
 
   @override
-  Future<DanbooruTagPool> searchTags({
-    required ExtractedKeywords keywords,
-    required LlmAssistantSettings settings,
-  }) async {
-    final globalQueries = [
-      ...keywords.scene,
-      ...keywords.style,
-      if (settings.showNsfw) ...keywords.nsfw,
-    ];
-    final globalResults = await Future.wait(
-      globalQueries.map(
-        (query) => _safeSearch(query, settings: settings, limit: 12),
-      ),
-    );
-    final characterResults = await Future.wait(
-      keywords.characters.map(
-        (query) => _characterTags(query, settings: settings),
-      ),
-    );
-    final pool = DanbooruTagPool(
-      globalTags: _merge(globalResults.expand((tags) => tags)),
-      perCharacterTags: characterResults,
-    );
-    if (pool.isEmpty) {
-      throw StateError('Danbooru 检索没有返回真实标签。');
-    }
-    return pool;
-  }
-
-  @override
-  Future<PromptAssistantResult> compose({
-    required String description,
-    required ExtractedKeywords keywords,
-    required DanbooruTagPool tagPool,
+  Future<PromptAssistantReply> chat({
+    required List<PromptChatMessage> messages,
     required String currentPositive,
     required String currentNegative,
     required LlmAssistantSettings settings,
+    CancelToken? cancelToken,
+    void Function(String status)? onStatus,
+    void Function(String notice)? onNotice,
   }) async {
-    final poolJson = {
-      'global': tagPool.globalTags.map(_tagJson).toList(),
-      'characters': tagPool.perCharacterTags
-          .map((tags) => tags.map(_tagJson).toList())
-          .toList(),
-    };
-    final reply = await _complete(
-      settings: settings,
-      model: settings.model,
-      messages: [
-        {'role': 'system', 'content': settings.prompts.promptComposition},
-        {
-          'role': 'user',
-          'content': jsonEncode({
-            'description': description,
-            'keywords': keywords.toJson(),
-            'candidate_pool': poolJson,
-            'current_positive': currentPositive,
-            'current_negative': currentNegative,
-          }),
-        },
-      ],
-    );
-    return PromptAssistantResult.fromJson(
-      await _parseJson(reply, settings: settings),
-    );
-  }
-
-  @override
-  Future<String> analyzeImage({
-    required String imagePath,
-    required String instruction,
-    required LlmAssistantSettings settings,
-  }) async {
-    if (settings.model.trim().isEmpty) {
-      throw const ConfigurationException(
-        '请先配置模型；使用识图时该模型必须支持 image_url 多模态输入。',
-      );
+    if (messages.isEmpty) {
+      throw const ConfigurationException('请先输入消息或添加图片。');
     }
-    final bytes = await File(imagePath).readAsBytes();
-    final extension = imagePath.split('.').last.toLowerCase();
-    final mime = extension == 'png' ? 'image/png' : 'image/jpeg';
-    final reply = await _complete(
-      settings: settings,
-      model: settings.model,
-      messages: [
-        {'role': 'system', 'content': settings.prompts.visionAnalysis},
-        {
-          'role': 'user',
-          'content': [
-            {
-              'type': 'text',
-              'text': instruction.trim().isEmpty
-                  ? '分析这张图片并提取可见画面信息。'
-                  : instruction.trim(),
-            },
-            {
-              'type': 'image_url',
-              'image_url': {'url': 'data:$mime;base64,${base64Encode(bytes)}'},
-            },
-          ],
-        },
-      ],
-    );
-    final json = await _parseJson(reply, settings: settings);
-    final description = json['description']?.toString().trim() ?? '';
-    if (description.isNotEmpty) return description;
-    final fragments = [
-      ..._stringList(json['characters']),
-      ..._stringList(json['scene']),
-      ..._stringList(json['style']),
-    ];
-    if (fragments.isNotEmpty) return fragments.join('，');
-    throw const DataParsingException('Vision 模型没有返回可用的画面描述。');
-  }
-
-  Future<String> _complete({
-    required LlmAssistantSettings settings,
-    required String model,
-    required List<Map<String, Object?>> messages,
-  }) async {
     final apiKey =
         await _credentialStore.read(AppConstants.llmCredentialKey) ?? '';
-    return _llmService.complete(
-      baseUrl: settings.baseUrl,
-      apiKey: apiKey,
-      model: model,
-      messages: messages,
-    );
-  }
+    final executedToolCalls = <String>{};
+    var danbooruCallCount = 0;
+    var danbooruToolsAvailable = settings.danbooruToolsEnabled;
+    final conversation = <Map<String, Object?>>[
+      {'role': 'system', 'content': settings.prompts.agentPrompt},
+      {
+        'role': 'system',
+        'content': jsonEncode({
+          'current_positive': currentPositive,
+          'current_negative': currentNegative,
+          'danbooru_tools_enabled': settings.danbooruToolsEnabled,
+          'instruction': settings.danbooruToolsEnabled
+              ? '普通问答、图片分析和创作讨论直接自然回复。需要核对标签时可以使用 Danbooru 搜索或相关标签工具，并结合返回结果继续回答。只有用户明确要求生成、整理、修改、优化、补全或应用提示词时才调用 submit_prompt_result 工具；该工具只控制全局正负面、多人正负面和人物位置，不得修改其他生成参数。不要在回复正文输出结构化 JSON。'
+              : '普通问答、图片分析和创作讨论直接自然回复。Danbooru 标签查询工具已关闭，不要尝试调用或声称已查询标签。只有用户明确要求生成、整理、修改、优化、补全或应用提示词时才调用 submit_prompt_result 工具；该工具只控制全局正负面、多人正负面和人物位置，不得修改其他生成参数。不要在回复正文输出结构化 JSON。',
+        }),
+      },
+      ...await Future.wait(messages.map(_messagePayload)),
+    ];
 
-  Future<Map<String, Object?>> _parseJson(
-    String value, {
-    required LlmAssistantSettings settings,
-  }) async {
-    final direct = _tryJson(value);
-    if (direct != null) return direct;
-    final repaired = await _complete(
-      settings: settings,
-      model: settings.model,
-      messages: [
-        {'role': 'system', 'content': settings.prompts.jsonRepair},
-        {'role': 'user', 'content': value},
-      ],
-    );
-    final result = _tryJson(repaired);
-    if (result != null) return result;
-    throw const DataParsingException('模型输出无法修复为合法 JSON。');
-  }
-
-  Map<String, Object?>? _tryJson(String value) {
-    var cleaned = value.trim();
-    if (cleaned.startsWith('```')) {
-      final newline = cleaned.indexOf('\n');
-      if (newline >= 0) cleaned = cleaned.substring(newline + 1);
-      if (cleaned.endsWith('```')) {
-        cleaned = cleaned.substring(0, cleaned.length - 3);
+    for (var round = 0; round < 6; round++) {
+      onStatus?.call(round == 0 ? '正在请求模型…' : '正在等待模型整理结果…');
+      final tools = <Map<String, Object?>>[
+        if (danbooruToolsAvailable) ..._danbooruTools,
+        ..._promptTools,
+      ];
+      if (cancelToken?.isCancelled == true) {
+        throw DioException.requestCancelled(
+          requestOptions: RequestOptions(),
+          reason: '用户已中止请求',
+        );
+      }
+      final result = await _llmService.completeWithTools(
+        baseUrl: settings.baseUrl,
+        apiKey: apiKey,
+        model: settings.model,
+        messages: conversation,
+        tools: tools,
+        cancelToken: cancelToken,
+      );
+      if (result.reasoningContent.isNotEmpty) {
+        onStatus?.call('模型正在思考…');
+      }
+      if (result.toolCalls.isEmpty) {
+        final promptResult = _promptResultFromContent(result.content);
+        return PromptAssistantReply(
+          message: promptResult == null
+              ? result.content.trim()
+              : promptResult.notes.isNotEmpty
+              ? promptResult.notes
+              : '提示词已写好。',
+          promptResult: promptResult,
+        );
+      }
+      conversation.add({
+        'role': 'assistant',
+        'content': result.content.isEmpty ? null : result.content,
+        'tool_calls': result.toolCalls
+            .map(
+              (call) => {
+                'id': call.id,
+                'type': 'function',
+                'function': {
+                  'name': call.name,
+                  'arguments': jsonEncode(call.arguments),
+                },
+              },
+            )
+            .toList(),
+      });
+      for (final call in result.toolCalls) {
+        if (cancelToken?.isCancelled == true) {
+          throw DioException.requestCancelled(
+            requestOptions: RequestOptions(),
+            reason: '用户已中止请求',
+          );
+        }
+        final signature = '${call.name}:${jsonEncode(call.arguments)}';
+        if (!executedToolCalls.add(signature)) {
+          conversation.add({
+            'role': 'tool',
+            'tool_call_id': call.id,
+            'name': call.name,
+            'content': jsonEncode({
+              'error': '相同参数的工具调用已经执行过，请直接使用已有结果回答，不要重复调用。',
+            }),
+          });
+          continue;
+        }
+        if (call.name == 'danbooru_search' || call.name == 'danbooru_related') {
+          if (danbooruCallCount >= 1) {
+            conversation.add({
+              'role': 'tool',
+              'tool_call_id': call.id,
+              'name': call.name,
+              'content': jsonEncode({
+                'error': '本次回复已经完成过标签查询。禁止继续搜索，请立即使用已有结果回答。',
+              }),
+            });
+            continue;
+          }
+          danbooruCallCount = 1;
+          danbooruToolsAvailable = false;
+          final notice = call.name == 'danbooru_search'
+              ? '提示词助手调用了标签搜索'
+              : '提示词助手调用了相关标签查询';
+          onNotice?.call(notice);
+          onStatus?.call(
+            call.name == 'danbooru_search' ? '正在搜索标签…' : '正在查询相关标签…',
+          );
+        }
+        if (call.name == 'submit_prompt_result') {
+          onNotice?.call('提示词助手正在整理提示词');
+          onStatus?.call('正在整理提示词…');
+        }
+        final toolResult = await _executeTool(call, settings);
+        if (call.name == 'submit_prompt_result' && toolResult is Map) {
+          final resultJson = toolResult['prompt_result'];
+          if (resultJson is Map) {
+            final promptResult = PromptAssistantResult.fromJson(
+              Map<String, Object?>.from(resultJson),
+            );
+            return PromptAssistantReply(
+              message: result.content.trim().isNotEmpty
+                  ? result.content.trim()
+                  : promptResult.notes.isNotEmpty
+                  ? promptResult.notes
+                  : '提示词已写好。',
+              promptResult: promptResult,
+            );
+          }
+        }
+        conversation.add({
+          'role': 'tool',
+          'tool_call_id': call.id,
+          'name': call.name,
+          'content': jsonEncode(toolResult),
+        });
+        if (call.name == 'danbooru_search' || call.name == 'danbooru_related') {
+          conversation.add({
+            'role': 'system',
+            'content':
+                '已获得本轮标签查询结果。请结合这些结果继续完成当前回答；若用户要求提示词，可以调用 submit_prompt_result。',
+          });
+        }
       }
     }
-    final start = cleaned.indexOf('{');
-    final end = cleaned.lastIndexOf('}');
-    if (start >= 0 && end > start) cleaned = cleaned.substring(start, end + 1);
+    return const PromptAssistantReply(
+      message: '模型未能完成本次工具流程，请关闭标签查询工具后重试，或换用支持 OpenAI Tool Calling 的模型。',
+    );
+  }
+
+  PromptAssistantResult? _promptResultFromContent(String content) {
+    final start = content.indexOf('{');
+    final end = content.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
     try {
-      final decoded = jsonDecode(cleaned);
-      return decoded is Map ? Map<String, Object?>.from(decoded) : null;
+      final decoded = jsonDecode(content.substring(start, end + 1));
+      if (decoded is! Map || !decoded.containsKey('positive')) return null;
+      return PromptAssistantResult.fromJson(Map<String, Object?>.from(decoded));
     } catch (_) {
       return null;
     }
   }
 
-  Future<List<DanbooruTag>> _safeSearch(
-    String query, {
-    required LlmAssistantSettings settings,
-    required int limit,
-  }) async {
-    if (query.trim().isEmpty) return const [];
-    try {
-      return await _danbooruService.search(
+  Future<Map<String, Object?>> _messagePayload(
+    PromptChatMessage message,
+  ) async {
+    final imagePath = message.imagePath;
+    if (imagePath == null || imagePath.trim().isEmpty) {
+      return {'role': message.role.name, 'content': message.content};
+    }
+    final bytes = await File(imagePath).readAsBytes();
+    final extension = imagePath.split('.').last.toLowerCase();
+    final mime = switch (extension) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'image/jpeg',
+    };
+    return {
+      'role': message.role.name,
+      'content': [
+        {
+          'type': 'text',
+          'text': message.content.trim().isEmpty
+              ? '请分析这张图片。'
+              : message.content.trim(),
+        },
+        {
+          'type': 'image_url',
+          'image_url': {'url': 'data:$mime;base64,${base64Encode(bytes)}'},
+        },
+      ],
+    };
+  }
+
+  Future<Object?> _executeTool(
+    LlmToolCall call,
+    LlmAssistantSettings settings,
+  ) async {
+    if (call.name == 'submit_prompt_result') {
+      final promptResult = PromptAssistantResult.fromJson(call.arguments);
+      if (promptResult.positive.trim().isEmpty) {
+        return {'error': 'positive 不能为空'};
+      }
+      return {
+        'accepted': true,
+        'prompt_result': promptResult.toJson(),
+        'instruction': '结果已交给应用处理。请用自然语言简短告知用户已准备好，可确认填入。',
+      };
+    }
+    if (!settings.danbooruToolsEnabled &&
+        (call.name == 'danbooru_search' || call.name == 'danbooru_related')) {
+      return {'error': 'Danbooru 标签查询工具已关闭'};
+    }
+    final limit = _limit(call.arguments['limit']);
+    if (call.name == 'danbooru_search') {
+      final query = call.arguments['query']?.toString().trim() ?? '';
+      if (query.isEmpty) return {'error': 'query 不能为空'};
+      final values = await _danbooruService.search(
         query: query,
         showNsfw: settings.showNsfw,
         customBaseUrl: settings.danbooruBaseUrl,
         limit: limit,
       );
-    } catch (_) {
-      return const [];
+      return {'query': query, 'results': values.map(_tagJson).toList()};
     }
-  }
-
-  Future<List<DanbooruTag>> _characterTags(
-    String query, {
-    required LlmAssistantSettings settings,
-  }) async {
-    final searched = await _safeSearch(query, settings: settings, limit: 18);
-    if (searched.isEmpty) return const [];
-    try {
-      final related = await _danbooruService.related(
-        tags: searched.take(5).map((tag) => tag.tag).toList(),
+    if (call.name == 'danbooru_related') {
+      final rawTags = call.arguments['tags'];
+      final tags = rawTags is List
+          ? rawTags
+                .map((value) => value.toString().trim())
+                .where((value) => value.isNotEmpty)
+                .toList()
+          : const <String>[];
+      if (tags.isEmpty) return {'error': 'tags 不能为空'};
+      final values = await _danbooruService.related(
+        tags: tags,
         showNsfw: settings.showNsfw,
         customBaseUrl: settings.danbooruBaseUrl,
-        limit: 18,
+        limit: limit,
       );
-      return _merge([...searched, ...related]);
-    } catch (_) {
-      return searched;
+      return {'tags': tags, 'results': values.map(_tagJson).toList()};
     }
+    return {'error': '未知工具：${call.name}'};
   }
 
-  List<DanbooruTag> _merge(Iterable<DanbooruTag> values) {
-    final seen = <String>{};
-    return values.where((tag) {
-      final key = tag.tag.toLowerCase().replaceAll('_', ' ').trim();
-      return key.isNotEmpty && seen.add(key);
-    }).toList();
+  int _limit(Object? value) {
+    final parsed = value is num
+        ? value.toInt()
+        : int.tryParse(value?.toString() ?? '') ?? 12;
+    return parsed.clamp(1, 30);
   }
 
   Map<String, Object?> _tagJson(DanbooruTag tag) => {
     'tag': tag.tag,
+    'novelai_tag': tag.novelAiTag,
     'cn_name': tag.cnName,
     'category': tag.category,
     'count': tag.count,
     'score': tag.score,
+    'wiki': tag.wiki,
+    'sources': tag.sources,
   };
-
-  List<String> _stringList(Object? value) => value is List
-      ? value
-            .map((item) => item?.toString().trim() ?? '')
-            .where((item) => item.isNotEmpty)
-            .toList()
-      : const [];
 }

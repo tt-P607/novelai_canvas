@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/network/backend_mode.dart';
 import '../../core/queue/generation_queue.dart';
+import '../../data/datasources/local/app_preferences.dart';
 import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/generation_task.dart';
 import '../../domain/entities/prompt_assistant.dart';
@@ -16,11 +17,14 @@ class GenerationController extends ChangeNotifier {
     required GenerationQueue queue,
     required GenerationHistoryRepository historyRepository,
     required BackendMode Function() backendModeProvider,
+    AppPreferences? preferences,
     Uuid uuid = const Uuid(),
   }) : _queue = queue,
        _historyRepository = historyRepository,
        _backendModeProvider = backendModeProvider,
-       _uuid = uuid {
+       _preferences = preferences,
+       _uuid = uuid,
+       stream = preferences?.streamGenerationEnabled ?? false {
     _queueSubscription = _queue.states.listen((value) {
       queueState = value;
       notifyListeners();
@@ -38,6 +42,7 @@ class GenerationController extends ChangeNotifier {
   final GenerationQueue _queue;
   final GenerationHistoryRepository _historyRepository;
   final BackendMode Function() _backendModeProvider;
+  final AppPreferences? _preferences;
   final Uuid _uuid;
   late final StreamSubscription<GenerationQueueState> _queueSubscription;
   late final StreamSubscription<GenerationTask> _taskSubscription;
@@ -59,7 +64,7 @@ class GenerationController extends ChangeNotifier {
   double noise = 0;
   String? sourceImagePath;
   String? maskImagePath;
-  bool stream = false;
+  bool stream;
   bool addOriginalImage = true;
   List<CharacterPrompt> characterPrompts = const [];
   List<VibeReference> vibeReferences = const [];
@@ -83,6 +88,8 @@ class GenerationController extends ChangeNotifier {
           (character) => CharacterPrompt(
             prompt: character.prompt,
             negativePrompt: character.negativePrompt,
+            position: CharacterPosition(x: character.x, y: character.y),
+            enabled: character.enabled,
           ),
         )
         .toList();
@@ -95,6 +102,12 @@ class GenerationController extends ChangeNotifier {
       sourceImagePath = null;
       maskImagePath = null;
     } else if (value == GenerationMode.imageToImage) {
+      maskImagePath = null;
+    } else if (value == GenerationMode.inpaint) {
+      final latest = latestImagePath;
+      if (latest != null && latest.isNotEmpty) {
+        sourceImagePath = latest;
+      }
       maskImagePath = null;
     }
     notifyListeners();
@@ -154,6 +167,7 @@ class GenerationController extends ChangeNotifier {
 
   void updateStream(bool value) {
     stream = value;
+    _preferences?.setStreamGenerationEnabled(value);
     notifyListeners();
   }
 

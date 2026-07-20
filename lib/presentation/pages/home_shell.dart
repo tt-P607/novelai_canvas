@@ -49,6 +49,10 @@ class _HomeShellState extends State<HomeShell> {
         controller: widget.generationController,
         promptAssistantController: widget.promptAssistantController,
         llmSettingsController: widget.llmSettingsController,
+        onOpenImageTools: (path) async {
+          await widget.imageToolsController.setSourceImage(path);
+          if (mounted) setState(() => _selectedIndex = 2);
+        },
       ),
       HistoryPage(
         controller: widget.historyController,

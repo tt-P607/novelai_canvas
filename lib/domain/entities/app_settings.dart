@@ -8,58 +8,72 @@ class AppSettings extends Equatable {
   const AppSettings({
     required this.onboardingCompleted,
     required this.backendMode,
-    required this.gatewayBaseUrl,
+    required this.endpointBaseUrl,
   });
 
   const AppSettings.initial()
     : onboardingCompleted = false,
       backendMode = BackendMode.native,
-      gatewayBaseUrl = '';
+      endpointBaseUrl = AppConstants.nativeBaseUrl;
 
   final bool onboardingCompleted;
   final BackendMode backendMode;
-  final String gatewayBaseUrl;
+  final String endpointBaseUrl;
+
+  String get effectiveBaseUrl {
+    final value = endpointBaseUrl.trim();
+    if (value.isNotEmpty) return value;
+    return backendMode == BackendMode.native ? AppConstants.nativeBaseUrl : '';
+  }
 
   Map<String, Object?> toJson() => {
     'onboarding_completed': onboardingCompleted,
     'backend_mode': backendMode.name,
-    'gateway_base_url': gatewayBaseUrl,
+    'endpoint_base_url': endpointBaseUrl.trim(),
   };
 
-  factory AppSettings.fromJson(Map<String, Object?> json) => AppSettings(
-    onboardingCompleted: json['onboarding_completed'] == true,
-    backendMode: BackendMode.values.firstWhere(
+  factory AppSettings.fromJson(Map<String, Object?> json) {
+    final backendMode = BackendMode.values.firstWhere(
       (mode) => mode.name == json['backend_mode']?.toString(),
       orElse: () => BackendMode.native,
-    ),
-    gatewayBaseUrl: json['gateway_base_url']?.toString() ?? '',
-  );
+    );
+    final storedUrl =
+        json['endpoint_base_url']?.toString() ??
+        json['gateway_base_url']?.toString() ??
+        '';
+    final normalizedUrl = storedUrl.trim();
+    return AppSettings(
+      onboardingCompleted: json['onboarding_completed'] == true,
+      backendMode: backendMode,
+      endpointBaseUrl:
+          normalizedUrl.isEmpty && backendMode == BackendMode.native
+          ? AppConstants.nativeBaseUrl
+          : normalizedUrl,
+    );
+  }
 
-  EndpointProfile get activeEndpoint => switch (backendMode) {
-    BackendMode.native => const EndpointProfile(
-      mode: BackendMode.native,
-      baseUrl: AppConstants.nativeBaseUrl,
-      credentialId: AppConstants.novelAiCredentialKey,
-    ),
-    BackendMode.gateway => EndpointProfile(
-      mode: BackendMode.gateway,
-      baseUrl: gatewayBaseUrl,
-      credentialId: AppConstants.gatewayCredentialKey,
-    ),
-  };
+  EndpointProfile get activeEndpoint => EndpointProfile(
+    mode: backendMode,
+    baseUrl: effectiveBaseUrl,
+    credentialId: AppConstants.imageApiCredentialKey,
+  );
 
   AppSettings copyWith({
     bool? onboardingCompleted,
     BackendMode? backendMode,
-    String? gatewayBaseUrl,
+    String? endpointBaseUrl,
   }) {
     return AppSettings(
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
       backendMode: backendMode ?? this.backendMode,
-      gatewayBaseUrl: gatewayBaseUrl ?? this.gatewayBaseUrl,
+      endpointBaseUrl: endpointBaseUrl ?? this.endpointBaseUrl,
     );
   }
 
   @override
-  List<Object?> get props => [onboardingCompleted, backendMode, gatewayBaseUrl];
+  List<Object?> get props => [
+    onboardingCompleted,
+    backendMode,
+    endpointBaseUrl,
+  ];
 }
