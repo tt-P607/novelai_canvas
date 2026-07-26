@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/network/backend_mode.dart';
 import '../../core/queue/generation_queue.dart';
+import '../../core/storage/image_size_reader.dart';
 import '../../data/datasources/local/app_preferences.dart';
 import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/generation_task.dart';
@@ -106,7 +107,7 @@ class GenerationController extends ChangeNotifier {
     } else if (value == GenerationMode.inpaint) {
       final latest = latestImagePath;
       if (latest != null && latest.isNotEmpty) {
-        sourceImagePath = latest;
+        setSourceImage(latest);
       }
       maskImagePath = null;
     }
@@ -155,8 +156,24 @@ class GenerationController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Adopts the source image and aligns the canvas to its real pixel size.
+  ///
+  /// Inpainting masks are generated against `width`/`height`; leaving a stale
+  /// canvas size here stretches both the mask and the editor preview, which
+  /// shifts every stroke and leaves a mismatched band along one edge.
   void setSourceImage(String? path) {
     sourceImagePath = path;
+    maskImagePath = null;
+    notifyListeners();
+    if (path == null || path.isEmpty) return;
+    unawaited(_adoptSourceImageSize(path));
+  }
+
+  Future<void> _adoptSourceImageSize(String path) async {
+    final size = await readImageSize(path);
+    if (size == null || sourceImagePath != path) return;
+    width = size.$1;
+    height = size.$2;
     notifyListeners();
   }
 

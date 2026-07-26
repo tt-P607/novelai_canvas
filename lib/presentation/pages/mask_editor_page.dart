@@ -86,7 +86,7 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                           ),
                           child: Image.file(
                             File(widget.sourceImagePath),
-                            fit: BoxFit.fill,
+                            fit: BoxFit.contain,
                           ),
                         ),
                         CustomPaint(
