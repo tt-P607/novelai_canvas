@@ -22,6 +22,13 @@ class NativeEndpointInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    // An absolute path is an explicit host choice, such as the account-host
+    // fallback used when a gateway only proxies the image API.
+    if (options.path.startsWith('http://') ||
+        options.path.startsWith('https://')) {
+      handler.next(options);
+      return;
+    }
     final settings = _settingsProvider();
     final requestPath = options.uri.path;
     options.baseUrl = _accountPaths.contains(requestPath)
