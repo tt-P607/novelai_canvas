@@ -453,11 +453,30 @@ class _CreationPageState extends State<CreationPage> {
           if (controller.sourceImagePath != null)
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.file(
-                File(controller.sourceImagePath!),
-                height: 180,
-                width: double.infinity,
-                fit: BoxFit.cover,
+              child: Stack(
+                children: [
+                  Image.file(
+                    File(controller.sourceImagePath!),
+                    height: 180,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                  // Painted mask preview: the mask PNG is white where the
+                  // image will be regenerated, tinted here so the selection
+                  // stays visible after leaving the editor.
+                  if (controller.mode == GenerationMode.inpaint &&
+                      controller.maskImagePath != null)
+                    Positioned.fill(
+                      child: Image.file(
+                        File(controller.maskImagePath!),
+                        fit: BoxFit.cover,
+                        color: const Color(0x804F6BD8),
+                        colorBlendMode: BlendMode.modulate,
+                        opacity: const AlwaysStoppedAnimation(0.55),
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                ],
               ),
             ),
           const SizedBox(height: 8),

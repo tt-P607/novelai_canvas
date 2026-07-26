@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:ui' as ui;
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +10,12 @@ import '../../core/storage/image_size_reader.dart';
 import '../../core/storage/mask_binarizer.dart';
 import '../widgets/fullscreen_image_preview.dart';
 
+/// Block-brush mask editor matching NovelAI's official web painter.
+///
+/// The selection lives on the 8x8 VAE block grid from the start: the brush is
+/// a circle quantised to whole blocks, so the on-screen overlay (blocky blue
+/// tint with stepped edges) is exactly what gets sent to the API. No
+/// anti-aliasing, no binarisation surprises, and the preview never lies.
 class MaskEditorPage extends StatefulWidget {
   const MaskEditorPage({super.key, required this.sourceImagePath});
 
@@ -20,12 +26,21 @@ class MaskEditorPage extends StatefulWidget {
 }
 
 class _MaskEditorPageState extends State<MaskEditorPage> {
-  final List<_MaskStroke> _strokes = [];
-  _MaskStroke? _activeStroke;
-  double _brushSize = 44;
+  (int, int)? _sourceSize;
+  int _blocksX = 0;
+  int _blocksY = 0;
+
+  /// Row-major block selection; true = inpaint.
+  List<bool> _blocks = const [];
+  final List<List<bool>> _undoStack = [];
+
+  /// Brush diameter in blocks, like the official "Pen Size".
+  double _penSize = 18;
   bool _eraser = false;
   bool _saving = false;
-  (int, int)? _sourceSize;
+
+  /// Cursor position in block coordinates while painting, for the brush ring.
+  Offset? _cursor;
 
   @override
   void initState() {
@@ -33,14 +48,20 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
     _loadSourceSize();
   }
 
-  /// The mask must match the source image pixel-for-pixel; deriving the canvas
-  /// from anything else (such as the configured output size) shifts every
-  /// stroke once the backend rescales the mask onto the image.
+  /// The mask must match the source image pixel-for-pixel; the block grid is
+  /// derived from the real image size so blocks line up with the VAE latents.
   Future<void> _loadSourceSize() async {
     final size = await readImageSize(widget.sourceImagePath);
-    if (!mounted) return;
-    setState(() => _sourceSize = size);
+    if (!mounted || size == null) return;
+    setState(() {
+      _sourceSize = size;
+      _blocksX = math.max(1, size.$1 ~/ 8);
+      _blocksY = math.max(1, size.$2 ~/ 8);
+      _blocks = List<bool>.filled(_blocksX * _blocksY, false);
+    });
   }
+
+  bool get _hasSelection => _blocks.contains(true);
 
   @override
   Widget build(BuildContext context) {
@@ -57,18 +78,21 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
         actions: [
           IconButton(
             tooltip: '撤销',
-            onPressed: _strokes.isEmpty
-                ? null
-                : () => setState(() => _strokes.removeLast()),
+            onPressed: _undoStack.isEmpty ? null : _undo,
             icon: const Icon(Icons.undo_rounded),
           ),
           IconButton(
             tooltip: '清空',
-            onPressed: _strokes.isEmpty ? null : () => setState(_strokes.clear),
+            onPressed: !_hasSelection
+                ? null
+                : () => setState(() {
+                    _pushUndo();
+                    _blocks = List<bool>.filled(_blocksX * _blocksY, false);
+                  }),
             icon: const Icon(Icons.delete_sweep_outlined),
           ),
           TextButton(
-            onPressed: _saving ? null : _save,
+            onPressed: _saving || !_hasSelection ? null : _save,
             child: _saving
                 ? const SizedBox.square(
                     dimension: 20,
@@ -86,13 +110,13 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                 aspectRatio: size.$1 / size.$2,
                 child: LayoutBuilder(
                   builder: (context, constraints) => GestureDetector(
-                    onPanStart: (details) => _startStroke(
-                      _normalize(details.localPosition, constraints.biggest),
-                    ),
-                    onPanUpdate: (details) => _appendPoint(
-                      _normalize(details.localPosition, constraints.biggest),
-                    ),
-                    onPanEnd: (_) => _endStroke(),
+                    onPanStart: (details) {
+                      _pushUndo();
+                      _paintAt(details.localPosition, constraints.biggest);
+                    },
+                    onPanUpdate: (details) =>
+                        _paintAt(details.localPosition, constraints.biggest),
+                    onPanEnd: (_) => setState(() => _cursor = null),
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -101,18 +125,22 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                             context,
                             widget.sourceImagePath,
                           ),
-                          // The AspectRatio above already matches the source,
-                          // so filling keeps image pixels and gesture
-                          // coordinates on exactly the same grid.
+                          // The AspectRatio above matches the source, so
+                          // image pixels and block coordinates share one grid.
                           child: Image.file(
                             File(widget.sourceImagePath),
                             fit: BoxFit.fill,
                           ),
                         ),
-                        CustomPaint(
-                          painter: _MaskOverlayPainter(
-                            strokes: _strokes,
-                            activeStroke: _activeStroke,
+                        RepaintBoundary(
+                          child: CustomPaint(
+                            painter: _BlockMaskPainter(
+                              blocks: _blocks,
+                              blocksX: _blocksX,
+                              blocksY: _blocksY,
+                              cursor: _cursor,
+                              penSize: _penSize,
+                            ),
                           ),
                         ),
                       ],
@@ -141,13 +169,13 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                   const Text('笔刷'),
                   Expanded(
                     child: Slider(
-                      value: _brushSize,
-                      min: 8,
-                      max: 96,
-                      onChanged: (value) => setState(() => _brushSize = value),
+                      value: _penSize,
+                      min: 2,
+                      max: 64,
+                      onChanged: (value) => setState(() => _penSize = value),
                     ),
                   ),
-                  Text(_brushSize.round().toString()),
+                  Text(_penSize.round().toString()),
                 ],
               ),
             ),
@@ -157,31 +185,34 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
     );
   }
 
-  Offset _normalize(Offset point, Size size) => Offset(
-    (point.dx / size.width).clamp(0, 1),
-    (point.dy / size.height).clamp(0, 1),
-  );
-
-  void _startStroke(Offset point) {
-    setState(() {
-      _activeStroke = _MaskStroke(
-        points: [point],
-        normalizedWidth: _brushSize / 400,
-        eraser: _eraser,
-      );
-    });
+  void _pushUndo() {
+    _undoStack.add(List<bool>.of(_blocks));
+    if (_undoStack.length > 50) _undoStack.removeAt(0);
   }
 
-  void _appendPoint(Offset point) {
-    setState(() => _activeStroke?.points.add(point));
-  }
+  void _undo() => setState(() => _blocks = _undoStack.removeLast());
 
-  void _endStroke() {
-    final stroke = _activeStroke;
-    if (stroke == null) return;
+  /// Stamps a circular brush of [_penSize] blocks onto the block grid.
+  void _paintAt(Offset local, Size canvasSize) {
+    final bx = local.dx / canvasSize.width * _blocksX;
+    final by = local.dy / canvasSize.height * _blocksY;
+    final radius = _penSize / 2;
+    final radiusSq = radius * radius;
+    final minX = math.max(0, (bx - radius).floor());
+    final maxX = math.min(_blocksX - 1, (bx + radius).ceil());
+    final minY = math.max(0, (by - radius).floor());
+    final maxY = math.min(_blocksY - 1, (by + radius).ceil());
     setState(() {
-      _strokes.add(stroke);
-      _activeStroke = null;
+      _cursor = Offset(bx, by);
+      for (var y = minY; y <= maxY; y++) {
+        for (var x = minX; x <= maxX; x++) {
+          final dx = x + 0.5 - bx;
+          final dy = y + 0.5 - by;
+          if (dx * dx + dy * dy <= radiusSq) {
+            _blocks[y * _blocksX + x] = !_eraser;
+          }
+        }
+      }
     });
   }
 
@@ -189,25 +220,13 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
     setState(() => _saving = true);
     try {
       final source = _sourceSize!;
-      final width = source.$1;
-      final height = source.$2;
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      canvas.drawRect(
-        Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
-        Paint()..color = Colors.black,
-      );
-      for (final stroke in _strokes) {
-        _drawStroke(canvas, Size(width.toDouble(), height.toDouble()), stroke);
-      }
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(width, height);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) throw StateError('无法编码蒙版 PNG。');
-      final maskBytes = await compute(
-        binarizeMaskToVaeGrid,
-        byteData.buffer.asUint8List(),
-      );
+      final maskBytes = await compute(renderBlockMaskPng, <String, Object>{
+        'width': source.$1,
+        'height': source.$2,
+        'blocksX': _blocksX,
+        'blocksY': _blocksY,
+        'blocks': _blocks,
+      });
       final directory = await getApplicationSupportDirectory();
       final maskDirectory = Directory(p.join(directory.path, 'masks'));
       await maskDirectory.create(recursive: true);
@@ -222,106 +241,80 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
       if (mounted) setState(() => _saving = false);
     }
   }
-
-  /// Strokes are painted fully opaque over an opaque black backdrop.
-  ///
-  /// Using [BlendMode.src] here would replace the alpha channel as well, so
-  /// anti-aliased edges became semi-transparent and survived binarisation as
-  /// grey fringes. Compositing with [BlendMode.srcOver] keeps alpha at 255 and
-  /// leaves only a greyscale ramp, which the threshold pass removes cleanly.
-  void _drawStroke(Canvas canvas, Size size, _MaskStroke stroke) {
-    if (stroke.points.isEmpty) return;
-    final paint = Paint()
-      ..color = stroke.eraser ? Colors.black : Colors.white
-      ..strokeWidth = stroke.normalizedWidth * size.shortestSide
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..isAntiAlias = true
-      ..blendMode = BlendMode.srcOver
-      ..style = PaintingStyle.stroke;
-    canvas.drawPath(_maskSmoothPath(stroke.points, size), paint);
-  }
 }
 
-class _MaskOverlayPainter extends CustomPainter {
-  const _MaskOverlayPainter({
-    required this.strokes,
-    required this.activeStroke,
+/// Draws the selection as translucent blue blocks with a stepped outline plus
+/// the circular brush ring, mimicking the official painter's look.
+class _BlockMaskPainter extends CustomPainter {
+  const _BlockMaskPainter({
+    required this.blocks,
+    required this.blocksX,
+    required this.blocksY,
+    required this.cursor,
+    required this.penSize,
   });
 
-  final List<_MaskStroke> strokes;
-  final _MaskStroke? activeStroke;
+  final List<bool> blocks;
+  final int blocksX;
+  final int blocksY;
+  final Offset? cursor;
+  final double penSize;
 
-  /// Strokes are drawn opaque inside an offscreen layer and the whole layer is
-  /// faded once. Painting them semi-transparent directly would darken every
-  /// self-overlap of a single stroke and misrepresent the actual mask.
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.saveLayer(
-      Offset.zero & size,
-      Paint()..color = Colors.white.withValues(alpha: 0.45),
-    );
-    for (final stroke in [...strokes, ?activeStroke]) {
-      if (stroke.points.isEmpty) continue;
-      final paint = Paint()
-        ..color = stroke.eraser ? Colors.transparent : const Color(0xFFFF4F9A)
-        ..strokeWidth = stroke.normalizedWidth * size.shortestSide
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..isAntiAlias = true
-        ..blendMode = stroke.eraser ? BlendMode.clear : BlendMode.srcOver
-        ..style = PaintingStyle.stroke;
-      canvas.drawPath(_maskSmoothPath(stroke.points, size), paint);
+    final cellW = size.width / blocksX;
+    final cellH = size.height / blocksY;
+    final fill = Paint()..color = const Color(0x594F6BD8);
+    final edge = Paint()
+      ..color = const Color(0xCC6E8AF0)
+      ..strokeWidth = 1.4
+      ..style = PaintingStyle.stroke;
+
+    bool on(int x, int y) =>
+        x >= 0 &&
+        x < blocksX &&
+        y >= 0 &&
+        y < blocksY &&
+        blocks[y * blocksX + x];
+
+    for (var y = 0; y < blocksY; y++) {
+      for (var x = 0; x < blocksX; x++) {
+        if (!on(x, y)) continue;
+        final rect = Rect.fromLTWH(x * cellW, y * cellH, cellW, cellH);
+        canvas.drawRect(rect, fill);
+        // Stepped outline: draw the edge only where the neighbour is off.
+        if (!on(x, y - 1)) {
+          canvas.drawLine(rect.topLeft, rect.topRight, edge);
+        }
+        if (!on(x, y + 1)) {
+          canvas.drawLine(rect.bottomLeft, rect.bottomRight, edge);
+        }
+        if (!on(x - 1, y)) {
+          canvas.drawLine(rect.topLeft, rect.bottomLeft, edge);
+        }
+        if (!on(x + 1, y)) {
+          canvas.drawLine(rect.topRight, rect.bottomRight, edge);
+        }
+      }
     }
-    canvas.restore();
+
+    final cursorPosition = cursor;
+    if (cursorPosition != null) {
+      final ring = Paint()
+        ..color = Colors.white.withValues(alpha: 0.9)
+        ..strokeWidth = 1.6
+        ..style = PaintingStyle.stroke;
+      canvas.drawCircle(
+        Offset(cursorPosition.dx * cellW, cursorPosition.dy * cellH),
+        penSize / 2 * cellW,
+        ring,
+      );
+    }
   }
 
   @override
-  bool shouldRepaint(covariant _MaskOverlayPainter oldDelegate) => true;
-}
-
-class _MaskStroke {
-  const _MaskStroke({
-    required this.points,
-    required this.normalizedWidth,
-    required this.eraser,
-  });
-
-  final List<Offset> points;
-  final double normalizedWidth;
-  final bool eraser;
-}
-
-Path _maskSmoothPath(List<Offset> points, Size size) {
-  final path = Path();
-  final first = Offset(
-    points.first.dx * size.width,
-    points.first.dy * size.height,
-  );
-  path.moveTo(first.dx, first.dy);
-  if (points.length == 1) {
-    path.lineTo(first.dx + 0.01, first.dy + 0.01);
-    return path;
-  }
-  for (var index = 1; index < points.length - 1; index++) {
-    final current = Offset(
-      points[index].dx * size.width,
-      points[index].dy * size.height,
-    );
-    final next = Offset(
-      points[index + 1].dx * size.width,
-      points[index + 1].dy * size.height,
-    );
-    final midpoint = Offset(
-      (current.dx + next.dx) / 2,
-      (current.dy + next.dy) / 2,
-    );
-    path.quadraticBezierTo(current.dx, current.dy, midpoint.dx, midpoint.dy);
-  }
-  final last = Offset(
-    points.last.dx * size.width,
-    points.last.dy * size.height,
-  );
-  path.lineTo(last.dx, last.dy);
-  return path;
+  bool shouldRepaint(covariant _BlockMaskPainter oldDelegate) =>
+      oldDelegate.blocks != blocks ||
+      oldDelegate.cursor != cursor ||
+      oldDelegate.penSize != penSize;
 }
