@@ -373,10 +373,45 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
+  /// Pause between queued tasks, user-configurable down to 0.3 s.
+  Widget _intervalSelector() {
+    final seconds = controller.taskIntervalSeconds;
+    return Row(
+      children: [
+        Icon(
+          Icons.timer_outlined,
+          size: 16,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 6),
+        Text('生成间隔', style: Theme.of(context).textTheme.bodySmall),
+        Expanded(
+          child: Slider(
+            value: seconds.clamp(0.3, 10),
+            min: 0.3,
+            max: 10,
+            divisions: 97,
+            label: '${seconds.toStringAsFixed(1)} 秒',
+            onChanged: controller.updateTaskInterval,
+          ),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(
+            '${seconds.toStringAsFixed(1)}s',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _primaryActions() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _batchSelector(),
+      _intervalSelector(),
       const SizedBox(height: 8),
       // Stays tappable while running: new taps append to the serial queue.
       FilledButton.icon(

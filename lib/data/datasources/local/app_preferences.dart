@@ -50,6 +50,12 @@ class AppPreferences {
   Future<void> setStreamGenerationEnabled(bool value) =>
       _preferences.setBool('stream_generation_enabled', value);
 
+  /// Pause between consecutive queue tasks, in milliseconds.
+  int get taskIntervalMs => _preferences.getInt('task_interval_ms') ?? 1000;
+
+  Future<void> setTaskIntervalMs(int value) =>
+      _preferences.setInt('task_interval_ms', value);
+
   /// Cached subscription tier. The tier itself is not a credential, so it may
   /// live in plain preferences for instant display on cold start.
   int? get subscriptionTier => _preferences.getInt('subscription_tier');

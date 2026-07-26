@@ -49,11 +49,18 @@ class GenerationQueue {
        _imageStore = imageStore,
        _wakeLockSetter = wakeLockSetter ?? _setWakeLock;
 
+  /// Minimum allowed pause between consecutive tasks.
+  static const minTaskInterval = Duration(milliseconds: 300);
+
   final GenerationRepository _generationRepository;
   final GenerationHistoryRepository _historyRepository;
   final GenerationImageStore _imageStore;
   final int maxAutomaticRetries;
   final Duration rateLimitCooldown;
+
+  /// Pause inserted between consecutive tasks, so continuous generation does
+  /// not hammer the endpoint. User-configurable, clamped to [minTaskInterval].
+  Duration taskInterval = const Duration(seconds: 1);
   final Future<void> Function(bool enabled) _wakeLockSetter;
   final Queue<String> _pendingIds = Queue<String>();
   final Set<String> _knownIds = {};
@@ -154,6 +161,7 @@ class GenerationQueue {
     if (_isProcessing || _disposed) return;
     _isProcessing = true;
     try {
+      var ranPrevious = false;
       while (_pendingIds.isNotEmpty && !_disposed) {
         await _waitForCooldown();
         final taskId = _pendingIds.removeFirst();
@@ -163,7 +171,15 @@ class GenerationQueue {
             persisted.status == GenerationTaskStatus.cancelled) {
           continue;
         }
+        if (ranPrevious) {
+          final pause = taskInterval < minTaskInterval
+              ? minTaskInterval
+              : taskInterval;
+          await Future<void>.delayed(pause);
+          if (_disposed) break;
+        }
         await _runTask(persisted);
+        ranPrevious = true;
       }
     } finally {
       _activeTask = null;

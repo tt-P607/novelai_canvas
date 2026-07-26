@@ -110,6 +110,34 @@ void main() {
     expect(history.items['retry']?.retryCount, 1);
     await queue.dispose();
   });
+
+  test('连续任务之间按配置的间隔停顿，且不低于 300ms 下限', () async {
+    final history = _MemoryHistoryRepository();
+    final generation = _FakeGenerationRepository();
+    final queue = GenerationQueue(
+      generationRepository: generation,
+      historyRepository: history,
+      imageStore: const _MemoryImageStore(),
+      wakeLockSetter: (_) async {},
+    )..taskInterval = const Duration(milliseconds: 100);
+
+    // 100ms is below the floor, so the effective pause must be >= 300ms.
+    final stopwatch = Stopwatch()..start();
+    await queue.enqueue(_task('gap-a'));
+    await queue.enqueue(_task('gap-b'));
+    await _waitFor(
+      () => history.items['gap-b']?.status == GenerationTaskStatus.completed,
+    );
+    stopwatch.stop();
+
+    expect(generation.executedIds, ['gap-a', 'gap-b']);
+    expect(
+      stopwatch.elapsedMilliseconds,
+      greaterThanOrEqualTo(300),
+      reason: '两个任务之间必须至少停顿最小间隔',
+    );
+    await queue.dispose();
+  });
 }
 
 GenerationTask _task(String id) {

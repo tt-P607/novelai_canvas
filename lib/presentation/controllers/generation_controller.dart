@@ -30,6 +30,9 @@ class GenerationController extends ChangeNotifier {
        _subscriptionTierLoader = subscriptionTierLoader,
        _uuid = uuid,
        stream = preferences?.streamGenerationEnabled ?? false {
+    _queue.taskInterval = Duration(
+      milliseconds: preferences?.taskIntervalMs ?? 1000,
+    );
     // Restore the cached tier so the badge and cost preview are correct on
     // cold start without waiting for the network round-trip.
     final cachedTier = preferences?.subscriptionTier;
@@ -394,6 +397,19 @@ class GenerationController extends ChangeNotifier {
 
   void updateBatchCount(int value) {
     batchCount = value.clamp(1, 15);
+    notifyListeners();
+  }
+
+  /// Pause between consecutive tasks in seconds, persisted across restarts.
+  double get taskIntervalSeconds => _queue.taskInterval.inMilliseconds / 1000;
+
+  void updateTaskInterval(double seconds) {
+    final millis = (seconds * 1000).round().clamp(
+      GenerationQueue.minTaskInterval.inMilliseconds,
+      60000,
+    );
+    _queue.taskInterval = Duration(milliseconds: millis);
+    _preferences?.setTaskIntervalMs(millis);
     notifyListeners();
   }
 
