@@ -340,16 +340,58 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
+  /// Number of tasks queued per tap. The queue executes strictly serially, so
+  /// this is continuous auto-generation rather than parallelism.
+  Widget _batchSelector() {
+    return Row(
+      children: [
+        Icon(
+          Icons.repeat_rounded,
+          size: 16,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 6),
+        Text('连续生成', style: Theme.of(context).textTheme.bodySmall),
+        const Spacer(),
+        SegmentedButton<int>(
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          segments: const [
+            ButtonSegment(value: 1, label: Text('1')),
+            ButtonSegment(value: 3, label: Text('3')),
+            ButtonSegment(value: 5, label: Text('5')),
+            ButtonSegment(value: 10, label: Text('10')),
+          ],
+          selected: {controller.batchCount},
+          onSelectionChanged: (selection) =>
+              controller.updateBatchCount(selection.single),
+        ),
+      ],
+    );
+  }
+
   Widget _primaryActions() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      _batchSelector(),
+      const SizedBox(height: 8),
+      // Stays tappable while running: new taps append to the serial queue.
       FilledButton.icon(
-        onPressed: controller.queueState.isRunning ? null : _submit,
+        onPressed: _submit,
         icon: const Icon(Icons.auto_awesome_rounded),
         label: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(controller.queueState.isRunning ? '正在生成…' : '立即生成'),
+            Text(
+              controller.queueState.isRunning
+                  ? '继续排队生成'
+                  : (controller.batchCount > 1
+                        ? '连续生成 ×${controller.batchCount}'
+                        : '立即生成'),
+            ),
             const SizedBox(width: 8),
             _anlasBadge(),
           ],
@@ -617,14 +659,17 @@ class _CreationPageState extends State<CreationPage> {
 
   Future<void> _submit() async {
     try {
+      final count = controller.batchCount;
       final task = await controller.submit();
       if (!mounted) return;
       showCompactSnackBar(
         context,
         icon: Icons.schedule_rounded,
-        message: task.status == GenerationTaskStatus.running
-            ? '已开始生成'
-            : '已加入生成队列',
+        message: count > 1
+            ? '已加入 $count 个任务，串行连续生成'
+            : (task.status == GenerationTaskStatus.running
+                  ? '已开始生成'
+                  : '已加入生成队列'),
       );
     } catch (error) {
       if (!mounted) return;

@@ -389,12 +389,32 @@ class GenerationController extends ChangeNotifier {
     return null;
   }
 
+  /// How many tasks one tap enqueues; the queue still executes them serially.
+  int batchCount = 1;
+
+  void updateBatchCount(int value) {
+    batchCount = value.clamp(1, 15);
+    notifyListeners();
+  }
+
   Future<GenerationTask> submit() async {
     final validation = validate();
     if (validation != null) throw StateError(validation);
+    GenerationTask? last;
+    // Serial batch: each task snapshots identical settings but rolls its own
+    // seed (unless the user pinned one), matching NAI-WorldPainter's queue.
+    for (var index = 0; index < batchCount; index++) {
+      last = await _queue.enqueue(_buildTask());
+    }
+    latestTask = last;
+    notifyListeners();
+    return latestTask!;
+  }
+
+  GenerationTask _buildTask() {
     final backendMode = _backendModeProvider();
     final now = DateTime.now().toUtc();
-    final task = GenerationTask(
+    return GenerationTask(
       id: _uuid.v4(),
       spec: GenerationSpec(
         mode: mode,
@@ -427,9 +447,6 @@ class GenerationController extends ChangeNotifier {
       createdAt: now,
       updatedAt: now,
     );
-    latestTask = await _queue.enqueue(task);
-    notifyListeners();
-    return latestTask!;
   }
 
   Future<void> cancelActive() async {
