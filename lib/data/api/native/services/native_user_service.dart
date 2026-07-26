@@ -5,9 +5,10 @@ import '../../../../core/network/network_error_mapper.dart';
 import '../../../../domain/entities/subscription_info.dart';
 import '../../common/json_helpers.dart';
 
-/// NovelAI answers account requests aimed at the image host with this notice
-/// instead of an error status, so it has to be detected from the payload.
-const _wrongHostNotice = 'update to the image URL';
+/// NovelAI answers account requests aimed at the wrong host with this notice.
+/// It may arrive as a bare string, as a JSON field, or inside an HTML page, and
+/// often carries a success status, so the body has to be inspected directly.
+const _wrongHostNotice = 'update to the image url';
 
 class NativeSubscriptionService {
   const NativeSubscriptionService(this.client);
@@ -22,17 +23,19 @@ class NativeSubscriptionService {
     }
   }
 
-  /// Gateways that proxy only image.novelai.net cannot serve `/user/*`.
-  /// Retrying against the official account host keeps the tier readable
-  /// without requiring every gateway to implement account routes.
+  /// Reads the tier from the configured endpoint, falling back to the official
+  /// account host when that endpoint cannot serve `/user/*`.
+  ///
+  /// Any failure of the first attempt is treated as "this endpoint cannot
+  /// answer" rather than a fatal error: gateways signal it with assorted status
+  /// codes, HTML pages, or a plain-text notice, and the fallback is harmless
+  /// when the endpoint was simply unreachable.
   Future<Map<String, Object?>> _fetch() async {
     try {
-      final json = asJsonMap(
-        (await client.get<Object?>('/user/subscription')).data,
-      );
-      if (!_isWrongHostResponse(json)) return json;
-    } on DioException catch (error) {
-      if (error.response?.statusCode != 404) rethrow;
+      final data = (await client.get<Object?>('/user/subscription')).data;
+      if (!_isWrongHost(data)) return asJsonMap(data);
+    } catch (_) {
+      // Fall through to the official account host.
     }
     final response = await client.get<Object?>(
       '${NativeEndpointResolver.officialAccountBaseUrl()}/user/subscription',
@@ -40,11 +43,9 @@ class NativeSubscriptionService {
     return asJsonMap(response.data);
   }
 
-  bool _isWrongHostResponse(Map<String, Object?> json) {
-    if (json.containsKey('tier')) return false;
-    return json.values.any(
-      (value) => value is String && value.contains(_wrongHostNotice),
-    );
+  bool _isWrongHost(Object? data) {
+    if (data is Map && data.containsKey('tier')) return false;
+    return data.toString().toLowerCase().contains(_wrongHostNotice);
   }
 
   SubscriptionInfo _parse(Map<String, Object?> json) {
