@@ -3,11 +3,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/storage/image_size_reader.dart';
+import '../../core/storage/mask_binarizer.dart';
 import '../widgets/fullscreen_image_preview.dart';
 
 class MaskEditorPage extends StatefulWidget {
@@ -205,7 +205,7 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) throw StateError('无法编码蒙版 PNG。');
       final maskBytes = await compute(
-        _binarizeMask,
+        binarizeMaskToVaeGrid,
         byteData.buffer.asUint8List(),
       );
       final directory = await getApplicationSupportDirectory();
@@ -241,27 +241,6 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
       ..style = PaintingStyle.stroke;
     canvas.drawPath(_maskSmoothPath(stroke.points, size), paint);
   }
-}
-
-/// Collapses the anti-aliased greyscale ramp into the pure black/white mask
-/// NovelAI expects. Runs off the UI isolate because full-resolution masks are
-/// several megapixels.
-Uint8List _binarizeMask(Uint8List pngBytes) {
-  final decoded = img.decodePng(pngBytes);
-  if (decoded == null) throw StateError('无法处理蒙版 PNG。');
-  final mask = img.Image(
-    width: decoded.width,
-    height: decoded.height,
-    numChannels: 3,
-  );
-  for (var y = 0; y < decoded.height; y++) {
-    for (var x = 0; x < decoded.width; x++) {
-      final pixel = decoded.getPixel(x, y);
-      final value = pixel.r >= 128 ? 255 : 0;
-      mask.setPixelRgb(x, y, value, value, value);
-    }
-  }
-  return img.encodePng(mask);
 }
 
 class _MaskOverlayPainter extends CustomPainter {

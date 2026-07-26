@@ -156,7 +156,12 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
+  /// Section order follows the task flow: pick the mode first, feed it inputs
+  /// (source image and mask sit directly below the mode switch so inpainting
+  /// never requires scrolling), then prompts, then advanced parameters.
   List<Widget> _sections() => [
+    _modeSelector(),
+    const SizedBox(height: 14),
     GenerationResultPanel(
       previewBytes: controller.queueState.previewImageBytes,
       previewStep: controller.queueState.previewStep,
@@ -165,11 +170,13 @@ class _CreationPageState extends State<CreationPage> {
       onSendToImageTools: widget.onOpenImageTools,
       onInpaint: _inpaintLatest,
     ),
+    if (controller.mode != GenerationMode.textToImage) ...[
+      const SizedBox(height: 14),
+      _imageInputCard(),
+    ],
     const SizedBox(height: 14),
     _primaryActions(),
     const SizedBox(height: 18),
-    _modeSelector(),
-    const SizedBox(height: 14),
     _assistantShortcut(),
     const SizedBox(height: 18),
     TextField(
@@ -196,10 +203,6 @@ class _CreationPageState extends State<CreationPage> {
         border: OutlineInputBorder(),
       ),
     ),
-    if (controller.mode != GenerationMode.textToImage) ...[
-      const SizedBox(height: 18),
-      _imageInputCard(),
-    ],
     const SizedBox(height: 18),
     GenerationParameterCard(
       controller: controller,

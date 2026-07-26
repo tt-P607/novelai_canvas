@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'glass/liquid_glass.dart';
 
-/// Draggable in-page window for the prompt assistant.
+/// Draggable, resizable in-page window for the prompt assistant.
 ///
 /// Must be placed inside a [Stack]. Owns a [Positioned.fill] so the internal
 /// [LayoutBuilder] never becomes the direct parent of a [Positioned], keeping
@@ -26,8 +26,9 @@ class FloatingAssistantWindow extends StatefulWidget {
 
 class _FloatingAssistantWindowState extends State<FloatingAssistantWindow> {
   Offset? _position;
+  Size _size = const Size(340, 460);
 
-  static const _size = Size(340, 460);
+  static const _minSize = Size(240, 300);
 
   @override
   Widget build(BuildContext context) {
@@ -36,8 +37,14 @@ class _FloatingAssistantWindowState extends State<FloatingAssistantWindow> {
         builder: (context, constraints) {
           final maxWidth = constraints.maxWidth;
           final maxHeight = constraints.maxHeight;
-          final width = _size.width.clamp(0.0, maxWidth - 16);
-          final height = _size.height.clamp(0.0, maxHeight - 16);
+          final width = _size.width.clamp(
+            _minSize.width,
+            (maxWidth - 16).clamp(_minSize.width, double.infinity),
+          );
+          final height = _size.height.clamp(
+            _minSize.height,
+            (maxHeight - 16).clamp(_minSize.height, double.infinity),
+          );
           final position = _clamp(
             _position ?? Offset(maxWidth - width - 8, maxHeight - height - 96),
             maxWidth - width,
@@ -51,14 +58,25 @@ class _FloatingAssistantWindowState extends State<FloatingAssistantWindow> {
                 child: SizedBox(
                   width: width,
                   height: height,
-                  child: LiquidGlass(
-                    padding: EdgeInsets.zero,
-                    child: Column(
-                      children: [
-                        _header(context, position),
-                        Expanded(child: widget.child),
-                      ],
-                    ),
+                  child: Stack(
+                    children: [
+                      LiquidGlass(
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            _header(context, position),
+                            Expanded(child: widget.child),
+                          ],
+                        ),
+                      ),
+                      // Bottom-right resize grip. Kept outside the glass so
+                      // its hit area stays above the chat content.
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: _resizeGrip(context, Size(width, height)),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -102,6 +120,31 @@ class _FloatingAssistantWindowState extends State<FloatingAssistantWindow> {
               icon: const Icon(Icons.open_in_full_rounded, size: 18),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _resizeGrip(BuildContext context, Size resolvedSize) {
+    final colors = Theme.of(context).colorScheme;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanUpdate: (details) {
+        // Base the resize on the resolved size so the first drag continues
+        // smoothly from whatever the clamped size currently is.
+        setState(() {
+          _size = Size(
+            resolvedSize.width + details.delta.dx,
+            resolvedSize.height + details.delta.dy,
+          );
+        });
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(
+          Icons.south_east_rounded,
+          size: 16,
+          color: colors.onSurfaceVariant.withValues(alpha: 0.7),
         ),
       ),
     );
