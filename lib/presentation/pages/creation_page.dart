@@ -340,8 +340,9 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
-  /// Number of tasks queued per tap. The queue executes strictly serially, so
-  /// this is continuous auto-generation rather than parallelism.
+  /// Number of tasks queued per tap, dragged freely on a slider (1-15). The
+  /// queue executes strictly serially, so this is continuous auto-generation
+  /// rather than parallelism.
   Widget _batchSelector() {
     return Row(
       children: [
@@ -352,22 +353,23 @@ class _CreationPageState extends State<CreationPage> {
         ),
         const SizedBox(width: 6),
         Text('连续生成', style: Theme.of(context).textTheme.bodySmall),
-        const Spacer(),
-        SegmentedButton<int>(
-          showSelectedIcon: false,
-          style: const ButtonStyle(
-            visualDensity: VisualDensity.compact,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        Expanded(
+          child: Slider(
+            value: controller.batchCount.toDouble(),
+            min: 1,
+            max: 15,
+            divisions: 14,
+            label: '${controller.batchCount} 张',
+            onChanged: (value) => controller.updateBatchCount(value.round()),
           ),
-          segments: const [
-            ButtonSegment(value: 1, label: Text('1')),
-            ButtonSegment(value: 3, label: Text('3')),
-            ButtonSegment(value: 5, label: Text('5')),
-            ButtonSegment(value: 10, label: Text('10')),
-          ],
-          selected: {controller.batchCount},
-          onSelectionChanged: (selection) =>
-              controller.updateBatchCount(selection.single),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(
+            '${controller.batchCount} 张',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ),
       ],
     );
