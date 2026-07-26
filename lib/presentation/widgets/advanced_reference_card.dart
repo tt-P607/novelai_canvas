@@ -281,6 +281,8 @@ class _CharacterTile extends StatelessWidget {
           const SizedBox(height: 12),
           CharacterPositionGrid(
             value: character.position,
+            canvasWidth: controller.width,
+            canvasHeight: controller.height,
             onChanged: (position) => controller.updateCharacter(
               index,
               character.copyWith(position: position),

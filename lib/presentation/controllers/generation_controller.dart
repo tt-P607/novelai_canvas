@@ -9,6 +9,7 @@ import '../../core/queue/generation_queue.dart';
 import '../../core/storage/image_size_reader.dart';
 import '../../data/datasources/local/app_preferences.dart';
 import '../../domain/entities/advanced_generation.dart';
+import '../../domain/entities/anlas_estimate.dart';
 import '../../domain/entities/generation_task.dart';
 import '../../domain/entities/prompt_assistant.dart';
 import '../../domain/repositories/generation_history_repository.dart';
@@ -19,11 +20,13 @@ class GenerationController extends ChangeNotifier {
     required GenerationHistoryRepository historyRepository,
     required BackendMode Function() backendModeProvider,
     AppPreferences? preferences,
+    Future<int> Function()? subscriptionTierLoader,
     Uuid uuid = const Uuid(),
   }) : _queue = queue,
        _historyRepository = historyRepository,
        _backendModeProvider = backendModeProvider,
        _preferences = preferences,
+       _subscriptionTierLoader = subscriptionTierLoader,
        _uuid = uuid,
        stream = preferences?.streamGenerationEnabled ?? false {
     _queueSubscription = _queue.states.listen((value) {
@@ -44,6 +47,7 @@ class GenerationController extends ChangeNotifier {
   final GenerationHistoryRepository _historyRepository;
   final BackendMode Function() _backendModeProvider;
   final AppPreferences? _preferences;
+  final Future<int> Function()? _subscriptionTierLoader;
   final Uuid _uuid;
   late final StreamSubscription<GenerationQueueState> _queueSubscription;
   late final StreamSubscription<GenerationTask> _taskSubscription;
@@ -65,6 +69,9 @@ class GenerationController extends ChangeNotifier {
   double noise = 0;
   String? sourceImagePath;
   String? maskImagePath;
+
+  /// Pixel dimensions of [sourceImagePath], once decoded.
+  (int, int)? sourceImageSize;
   bool stream;
   bool addOriginalImage = true;
   List<CharacterPrompt> characterPrompts = const [];
@@ -76,9 +83,66 @@ class GenerationController extends ChangeNotifier {
   String? latestImagePath;
   GenerationQueueState queueState = const GenerationQueueState.idle();
 
+  /// Opus is subscription tier 3; only it grants the free low-cost sample.
+  bool isOpus = false;
+
+  AnlasEstimate get anlasEstimate => estimateAnlas(
+    width: width,
+    height: height,
+    steps: steps,
+    sampleCount: sampleCount,
+    isOpus: isOpus,
+    strength: strength,
+    hasSourceImage: sourceImagePath != null,
+    hasMask: maskImagePath != null,
+    characterReferenceCount: characterReferences
+        .where((reference) => reference.enabled)
+        .length,
+    vibeReferenceCount: vibeReferences
+        .where((reference) => reference.enabled)
+        .length,
+  );
+
+  /// Opus grants one free sample below the low-cost threshold, so the estimate
+  /// is wrong until the tier is known. Failures leave it at the safer
+  /// "not Opus" default rather than under-reporting the cost.
+  Future<void> refreshSubscription() async {
+    final loader = _subscriptionTierLoader;
+    if (loader == null) return;
+    try {
+      final tier = await loader();
+      final opus = tier >= 3;
+      if (isOpus == opus) return;
+      isOpus = opus;
+      notifyListeners();
+    } catch (_) {
+      // Cost preview stays conservative when the tier cannot be read.
+    }
+  }
+
   void updatePrompt(String value) => prompt = value;
   void updateNegativePrompt(String value) => negativePrompt = value;
   void updateModel(String value) => model = value;
+
+  void updateSampler(String value) {
+    sampler = value;
+    notifyListeners();
+  }
+
+  void updateNoiseSchedule(String value) {
+    noiseSchedule = value;
+    notifyListeners();
+  }
+
+  void updateCfgRescale(double value) {
+    cfgRescale = value;
+    notifyListeners();
+  }
+
+  void updateSampleCount(int value) {
+    sampleCount = value.clamp(1, 4);
+    notifyListeners();
+  }
 
   void applyAssistantResult(PromptAssistantResult result) {
     prompt = result.positive.trim();
@@ -156,14 +220,15 @@ class GenerationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Adopts the source image and aligns the canvas to its real pixel size.
+  /// Adopts the source image and seeds the canvas with its real pixel size.
   ///
-  /// Inpainting masks are generated against `width`/`height`; leaving a stale
-  /// canvas size here stretches both the mask and the editor preview, which
-  /// shifts every stroke and leaves a mismatched band along one edge.
+  /// The user may still pick any output size afterwards; keeping the source
+  /// dimensions around lets the UI flag a mismatch instead of silently
+  /// rescaling.
   void setSourceImage(String? path) {
     sourceImagePath = path;
     maskImagePath = null;
+    sourceImageSize = null;
     notifyListeners();
     if (path == null || path.isEmpty) return;
     unawaited(_adoptSourceImageSize(path));
@@ -172,6 +237,7 @@ class GenerationController extends ChangeNotifier {
   Future<void> _adoptSourceImageSize(String path) async {
     final size = await readImageSize(path);
     if (size == null || sourceImagePath != path) return;
+    sourceImageSize = size;
     width = size.$1;
     height = size.$2;
     notifyListeners();

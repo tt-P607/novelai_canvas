@@ -2,17 +2,25 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/advanced_generation.dart';
 
-/// 独立于业务控制器的角色空间点位选择器，后续可单独调整网格规格与视觉样式。
+/// Character placement picker.
+///
+/// The grid mirrors the configured canvas ratio so a cell on screen sits where
+/// the character will appear in the render; a fixed square would misrepresent
+/// portrait and landscape layouts.
 class CharacterPositionGrid extends StatelessWidget {
   const CharacterPositionGrid({
     super.key,
     required this.value,
     required this.onChanged,
+    required this.canvasWidth,
+    required this.canvasHeight,
     this.gridSize = 5,
   });
 
   final CharacterPosition value;
   final ValueChanged<CharacterPosition> onChanged;
+  final int canvasWidth;
+  final int canvasHeight;
   final int gridSize;
 
   @override
@@ -39,7 +47,7 @@ class CharacterPositionGrid extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         AspectRatio(
-          aspectRatio: 1,
+          aspectRatio: canvasWidth / canvasHeight,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: colors.surfaceContainerHighest.withValues(alpha: 0.35),
@@ -123,7 +131,7 @@ class CharacterPositionGrid extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          '点击网格直观指定角色在画面中的中心位置。',
+          '网格按当前画幅 $canvasWidth × $canvasHeight 显示，点击即可指定角色中心位置。',
           style: Theme.of(
             context,
           ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),

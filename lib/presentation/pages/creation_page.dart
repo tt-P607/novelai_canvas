@@ -63,6 +63,7 @@ class _CreationPageState extends State<CreationPage> {
       text: controller.height.toString(),
     );
     controller.addListener(_syncControllers);
+    controller.refreshSubscription();
   }
 
   @override
@@ -138,6 +139,7 @@ class _CreationPageState extends State<CreationPage> {
     GenerationResultPanel(
       previewBytes: controller.queueState.previewImageBytes,
       previewStep: controller.queueState.previewStep,
+      totalSteps: controller.queueState.activeTask?.spec.steps ?? 0,
       completedImagePath: controller.latestImagePath,
       onSendToImageTools: widget.onOpenImageTools,
     ),
@@ -183,7 +185,6 @@ class _CreationPageState extends State<CreationPage> {
       seedController: _seedController,
       widthController: _customWidthController,
       heightController: _customHeightController,
-      onApplyCustomSize: _applyCustomSize,
     ),
     if (controller.mode == GenerationMode.textToImage) ...[
       const SizedBox(height: 18),
@@ -207,13 +208,41 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
+  /// Mirrors the official cost preview: free generations show a check, billable
+  /// ones show the estimated Anlas so there is no surprise after tapping.
+  Widget _anlasBadge() {
+    final estimate = controller.anlasEstimate;
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: colors.onPrimary.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        estimate.isFree ? '免费' : '${estimate.total} Anlas',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: colors.onPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   Widget _primaryActions() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       FilledButton.icon(
         onPressed: controller.queueState.isRunning ? null : _submit,
         icon: const Icon(Icons.auto_awesome_rounded),
-        label: Text(controller.queueState.isRunning ? '正在生成…' : '立即生成'),
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(controller.queueState.isRunning ? '正在生成…' : '立即生成'),
+            const SizedBox(width: 8),
+            _anlasBadge(),
+          ],
+        ),
       ),
       if (controller.latestTask != null) ...[
         const SizedBox(height: 8),
@@ -362,11 +391,7 @@ class _CreationPageState extends State<CreationPage> {
     if (sourcePath == null) return;
     final maskPath = await Navigator.of(context).push<String>(
       MaterialPageRoute(
-        builder: (context) => MaskEditorPage(
-          sourceImagePath: sourcePath,
-          outputWidth: controller.width,
-          outputHeight: controller.height,
-        ),
+        builder: (context) => MaskEditorPage(sourceImagePath: sourcePath),
       ),
     );
     if (maskPath != null) controller.setMaskImage(maskPath);
@@ -440,13 +465,6 @@ class _CreationPageState extends State<CreationPage> {
           ],
         ),
       ),
-    );
-  }
-
-  void _applyCustomSize() {
-    controller.updateCustomSize(
-      width: _customWidthController.text,
-      height: _customHeightController.text,
     );
   }
 

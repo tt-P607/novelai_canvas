@@ -267,6 +267,10 @@ Future<void> _registerControllers() async {
       backendModeProvider: () =>
           getIt<AppSettingsController>().settings.backendMode,
       preferences: getIt(),
+      subscriptionTierLoader: () async {
+        final info = await getIt<NativeSubscriptionService>().getSubscription();
+        return info.tier;
+      },
     ),
   );
   getIt.registerLazySingleton(

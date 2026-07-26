@@ -7,19 +7,13 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/storage/image_size_reader.dart';
 import '../widgets/fullscreen_image_preview.dart';
 
 class MaskEditorPage extends StatefulWidget {
-  const MaskEditorPage({
-    super.key,
-    required this.sourceImagePath,
-    required this.outputWidth,
-    required this.outputHeight,
-  });
+  const MaskEditorPage({super.key, required this.sourceImagePath});
 
   final String sourceImagePath;
-  final int outputWidth;
-  final int outputHeight;
 
   @override
   State<MaskEditorPage> createState() => _MaskEditorPageState();
@@ -31,9 +25,32 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
   double _brushSize = 44;
   bool _eraser = false;
   bool _saving = false;
+  (int, int)? _sourceSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSourceSize();
+  }
+
+  /// The mask must match the source image pixel-for-pixel; deriving the canvas
+  /// from anything else (such as the configured output size) shifts every
+  /// stroke once the backend rescales the mask onto the image.
+  Future<void> _loadSourceSize() async {
+    final size = await readImageSize(widget.sourceImagePath);
+    if (!mounted) return;
+    setState(() => _sourceSize = size);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final size = _sourceSize;
+    if (size == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('绘制重绘区域')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('绘制重绘区域'),
@@ -66,7 +83,7 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
           Expanded(
             child: Center(
               child: AspectRatio(
-                aspectRatio: widget.outputWidth / widget.outputHeight,
+                aspectRatio: size.$1 / size.$2,
                 child: LayoutBuilder(
                   builder: (context, constraints) => GestureDetector(
                     onPanStart: (details) => _startStroke(
@@ -84,9 +101,12 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                             context,
                             widget.sourceImagePath,
                           ),
+                          // The AspectRatio above already matches the source,
+                          // so filling keeps image pixels and gesture
+                          // coordinates on exactly the same grid.
                           child: Image.file(
                             File(widget.sourceImagePath),
-                            fit: BoxFit.contain,
+                            fit: BoxFit.fill,
                           ),
                         ),
                         CustomPaint(
@@ -168,8 +188,9 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      final width = _align8(widget.outputWidth);
-      final height = _align8(widget.outputHeight);
+      final source = _sourceSize!;
+      final width = source.$1;
+      final height = source.$2;
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
       canvas.drawRect(
@@ -220,8 +241,6 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
       ..style = PaintingStyle.stroke;
     canvas.drawPath(_maskSmoothPath(stroke.points, size), paint);
   }
-
-  int _align8(int value) => ((value + 7) ~/ 8) * 8;
 }
 
 /// Collapses the anti-aliased greyscale ramp into the pure black/white mask

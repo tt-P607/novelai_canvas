@@ -13,12 +13,14 @@ class GenerationResultPanel extends StatelessWidget {
     super.key,
     required this.previewBytes,
     required this.previewStep,
+    required this.totalSteps,
     required this.completedImagePath,
     this.onSendToImageTools,
   });
 
   final List<int>? previewBytes;
   final int? previewStep;
+  final int totalSteps;
   final String? completedImagePath;
   final ValueChanged<String>? onSendToImageTools;
 
@@ -58,14 +60,78 @@ class GenerationResultPanel extends StatelessWidget {
     final data = Uint8List.fromList(bytes);
     return InkWell(
       onTap: () => FullscreenImagePreview.showMemory(context, data),
-      child: Image.memory(
-        data,
-        key: const ValueKey('stream-preview'),
-        width: double.infinity,
-        height: 280,
-        fit: BoxFit.contain,
-        gaplessPlayback: true,
-        filterQuality: FilterQuality.low,
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          Image.memory(
+            data,
+            key: const ValueKey('stream-preview'),
+            width: double.infinity,
+            height: 280,
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+          ),
+          _progressOverlay(context),
+        ],
+      ),
+    );
+  }
+
+  /// Early diffusion frames are noisy, so the progress bar carries most of the
+  /// feedback; it animates between steps instead of jumping.
+  Widget _progressOverlay(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final step = previewStep ?? 0;
+    final progress = totalSteps <= 0
+        ? null
+        : (step / totalSteps).clamp(0.0, 1.0);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 24, 14, 10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.55)],
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Text(
+                '正在推理',
+                style: Theme.of(
+                  context,
+                ).textTheme.labelSmall?.copyWith(color: Colors.white),
+              ),
+              const Spacer(),
+              Text(
+                totalSteps <= 0 ? 'Step $step' : 'Step $step / $totalSteps',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: progress ?? 0),
+            duration: const Duration(milliseconds: 420),
+            curve: Curves.easeOutCubic,
+            builder: (context, value, _) => ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress == null ? null : value,
+                minHeight: 4,
+                backgroundColor: Colors.white.withValues(alpha: 0.22),
+                valueColor: AlwaysStoppedAnimation(colors.primary),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -97,9 +163,7 @@ class GenerationResultPanel extends StatelessWidget {
           size: 18,
         ),
         const SizedBox(width: 8),
-        Expanded(
-          child: Text(isPreview ? '流式预览 · Step ${previewStep ?? 0}' : '最新生成结果'),
-        ),
+        Expanded(child: Text(isPreview ? '流式预览' : '最新生成结果')),
         if (!isPreview && path != null && onSendToImageTools != null)
           IconButton(
             tooltip: '发送到图像工具',
