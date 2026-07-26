@@ -208,11 +208,19 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
-  /// Mirrors the official cost preview: free generations show a check, billable
+  /// Mirrors the official cost preview: free generations show 免费, billable
   /// ones show the estimated Anlas so there is no surprise after tapping.
+  ///
+  /// While the subscription tier is unknown the number would be wrong for Opus
+  /// accounts, so it is withheld rather than shown as a definite cost.
   Widget _anlasBadge() {
-    final estimate = controller.anlasEstimate;
     final colors = Theme.of(context).colorScheme;
+    final label = switch (controller) {
+      final c when c.subscriptionLoading => '…',
+      final c when !c.subscriptionKnown => '?',
+      final c when c.anlasEstimate.isFree => '免费',
+      final c => '${c.anlasEstimate.total} Anlas',
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
@@ -220,11 +228,43 @@ class _CreationPageState extends State<CreationPage> {
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        estimate.isFree ? '免费' : '${estimate.total} Anlas',
+        label,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: colors.onPrimary,
           fontWeight: FontWeight.w700,
         ),
+      ),
+    );
+  }
+
+  /// Explains why the cost preview is provisional and offers a retry, since the
+  /// tier lookup fails whenever the token is missing or the network is down.
+  Widget _subscriptionNotice() {
+    if (controller.subscriptionKnown || controller.subscriptionLoading) {
+      return const SizedBox.shrink();
+    }
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline_rounded, size: 16, color: colors.tertiary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              controller.subscriptionError == null
+                  ? '尚未读取账户等级，消耗预览暂不可用。'
+                  : '账户等级读取失败：${controller.subscriptionError}',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colors.tertiary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => controller.refreshSubscription(force: true),
+            child: const Text('重试'),
+          ),
+        ],
       ),
     );
   }
@@ -244,6 +284,7 @@ class _CreationPageState extends State<CreationPage> {
           ],
         ),
       ),
+      _subscriptionNotice(),
       if (controller.latestTask != null) ...[
         const SizedBox(height: 8),
         _statusCard(controller.latestTask!),

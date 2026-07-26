@@ -4,9 +4,9 @@ import '../../domain/entities/advanced_generation.dart';
 
 /// Character placement picker.
 ///
-/// The grid mirrors the configured canvas ratio so a cell on screen sits where
-/// the character will appear in the render; a fixed square would misrepresent
-/// portrait and landscape layouts.
+/// Each cell carries the canvas aspect ratio so the grid reads as a miniature
+/// of the render; the whole control is capped in height to stay compact in the
+/// scrolling parameter list.
 class CharacterPositionGrid extends StatelessWidget {
   const CharacterPositionGrid({
     super.key,
@@ -15,6 +15,7 @@ class CharacterPositionGrid extends StatelessWidget {
     required this.canvasWidth,
     required this.canvasHeight,
     this.gridSize = 5,
+    this.maxHeight = 180,
   });
 
   final CharacterPosition value;
@@ -22,6 +23,7 @@ class CharacterPositionGrid extends StatelessWidget {
   final int canvasWidth;
   final int canvasHeight;
   final int gridSize;
+  final double maxHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -34,111 +36,106 @@ class CharacterPositionGrid extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text('画面位置', style: Theme.of(context).textTheme.labelLarge),
+            Text('画面位置', style: Theme.of(context).textTheme.labelSmall),
             const Spacer(),
             Text(
               '${_rowName(selectedRow)}${selectedColumn + 1}',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colors.primary,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        AspectRatio(
-          aspectRatio: canvasWidth / canvasHeight,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: colors.outlineVariant),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: GridView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: gridSize * gridSize,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: gridSize,
-                  mainAxisSpacing: 5,
-                  crossAxisSpacing: 5,
-                ),
-                itemBuilder: (context, index) {
-                  final row = index ~/ gridSize;
-                  final column = index % gridSize;
-                  final selected =
-                      row == selectedRow && column == selectedColumn;
-                  return Semantics(
-                    button: true,
-                    selected: selected,
-                    label: '角色位置 ${_rowName(row)}${column + 1}',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => onChanged(
-                        CharacterPosition(
-                          x: _coordinate(column),
-                          y: _coordinate(row),
-                        ),
-                      ),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 160),
-                        curve: Curves.easeOutCubic,
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? colors.primary
-                              : colors.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: selected
-                                ? colors.primary
-                                : colors.outlineVariant,
-                          ),
-                          boxShadow: selected
-                              ? [
-                                  BoxShadow(
-                                    color: colors.primary.withValues(
-                                      alpha: 0.3,
-                                    ),
-                                    blurRadius: 10,
-                                    spreadRadius: 1,
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Center(
-                          child: selected
-                              ? Icon(
-                                  Icons.person_pin_circle_rounded,
-                                  size: 22,
-                                  color: colors.onPrimary,
-                                )
-                              : Text(
-                                  '${_rowName(row)}${column + 1}',
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: colors.onSurfaceVariant,
-                                      ),
-                                ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: AspectRatio(
+              aspectRatio: canvasWidth / canvasHeight,
+              child: _grid(colors, selectedRow, selectedColumn),
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          '网格按当前画幅 $canvasWidth × $canvasHeight 显示，点击即可指定角色中心位置。',
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
         ),
       ],
     );
   }
+
+  Widget _grid(ColorScheme colors, int selectedRow, int selectedColumn) =>
+      DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest.withValues(alpha: 0.28),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: colors.outlineVariant),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            children: List.generate(
+              gridSize,
+              (row) => Expanded(
+                child: Row(
+                  children: List.generate(
+                    gridSize,
+                    (column) => Expanded(
+                      child: _cell(
+                        colors,
+                        row: row,
+                        column: column,
+                        selected:
+                            row == selectedRow && column == selectedColumn,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+  Widget _cell(
+    ColorScheme colors, {
+    required int row,
+    required int column,
+    required bool selected,
+  }) => Semantics(
+    button: true,
+    selected: selected,
+    label: '角色位置 ${_rowName(row)}${column + 1}',
+    child: Padding(
+      padding: const EdgeInsets.all(2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => onChanged(
+          CharacterPosition(x: _coordinate(column), y: _coordinate(row)),
+        ),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: selected
+                ? colors.primary
+                : colors.surfaceContainerLow.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: selected ? colors.primary : colors.outlineVariant,
+            ),
+          ),
+          child: Center(
+            child: selected
+                ? Icon(
+                    Icons.person_pin_circle_rounded,
+                    size: 16,
+                    color: colors.onPrimary,
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    ),
+  );
 
   int _index(double coordinate) =>
       (((coordinate - 0.1) / 0.2).round()).clamp(0, gridSize - 1);

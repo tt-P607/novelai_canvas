@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/errors/error_message.dart';
 import '../../core/network/backend_mode.dart';
 import '../../core/queue/generation_queue.dart';
 import '../../core/storage/image_size_reader.dart';
@@ -86,6 +87,14 @@ class GenerationController extends ChangeNotifier {
   /// Opus is subscription tier 3; only it grants the free low-cost sample.
   bool isOpus = false;
 
+  /// Null until the tier has been read at least once. The cost preview stays
+  /// provisional in that state instead of claiming the account pays full price.
+  int? subscriptionTier;
+  bool subscriptionLoading = false;
+  String? subscriptionError;
+
+  bool get subscriptionKnown => subscriptionTier != null;
+
   AnlasEstimate get anlasEstimate => estimateAnlas(
     width: width,
     height: height,
@@ -104,19 +113,30 @@ class GenerationController extends ChangeNotifier {
   );
 
   /// Opus grants one free sample below the low-cost threshold, so the estimate
-  /// is wrong until the tier is known. Failures leave it at the safer
-  /// "not Opus" default rather than under-reporting the cost.
-  Future<void> refreshSubscription() async {
+  /// is meaningless until the tier is known.
+  ///
+  /// The controller outlives the creation page, and the token may still be
+  /// missing on first open, so this stays retryable and surfaces failures
+  /// instead of silently pinning the account to the non-Opus branch.
+  Future<void> refreshSubscription({bool force = false}) async {
     final loader = _subscriptionTierLoader;
     if (loader == null) return;
+    if (subscriptionLoading) return;
+    if (subscriptionKnown && !force) return;
+    if (_backendModeProvider() != BackendMode.native) return;
+
+    subscriptionLoading = true;
+    subscriptionError = null;
+    notifyListeners();
     try {
       final tier = await loader();
-      final opus = tier >= 3;
-      if (isOpus == opus) return;
-      isOpus = opus;
+      subscriptionTier = tier;
+      isOpus = tier >= 3;
+    } catch (error) {
+      subscriptionError = friendlyErrorMessage(error);
+    } finally {
+      subscriptionLoading = false;
       notifyListeners();
-    } catch (_) {
-      // Cost preview stays conservative when the tier cannot be read.
     }
   }
 
