@@ -115,6 +115,47 @@ void main() {
     );
   });
 
+  test('官方地址下账户路径走 api 域名，其余生成路径走 image 域名', () async {
+    const settings = AppSettings.initial();
+    final dio = Dio();
+    dio.interceptors.add(
+      NativeEndpointInterceptor(settingsProvider: () => settings),
+    );
+    final adapter = _UriInspectAdapter();
+    dio.httpClientAdapter = adapter;
+
+    // upscale 和 generate-voice 形似图像端点，实际由账户域名提供。
+    const accountPaths = [
+      '/user/data',
+      '/user/subscription',
+      '/ai/upscale',
+      '/ai/generate-voice',
+    ];
+    for (final path in accountPaths) {
+      await dio.post<Object?>(path);
+      expect(
+        adapter.lastUri.toString(),
+        '${AppConstants.nativeUserBaseUrl}$path',
+        reason: '$path 必须发往账户域名',
+      );
+    }
+
+    const imagePaths = [
+      '/ai/generate-image',
+      '/ai/generate-image-stream',
+      '/ai/augment-image',
+      '/ai/annotate-image',
+    ];
+    for (final path in imagePaths) {
+      await dio.post<Object?>(path);
+      expect(
+        adapter.lastUri.toString(),
+        '${AppConstants.nativeBaseUrl}$path',
+        reason: '$path 必须发往图片域名',
+      );
+    }
+  });
+
   test('默认官方 URL 按 NovelAI 原生路径拆分图片与账户域名', () {
     const settings = AppSettings.initial();
 

@@ -14,10 +14,14 @@ class NativeEndpointInterceptor extends Interceptor {
 
   final AppSettings Function() _settingsProvider;
 
+  /// Paths served by api.novelai.net. `/ai/upscale` and `/ai/generate-voice`
+  /// look like image endpoints but live on the account host, so they must be
+  /// matched before any generic `/ai/` handling.
   static const _accountPaths = <String>{
     '/user/data',
     '/user/subscription',
     '/ai/upscale',
+    '/ai/generate-voice',
   };
 
   @override
