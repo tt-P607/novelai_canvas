@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -182,17 +183,10 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
       final image = await picture.toImage(width, height);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) throw StateError('无法编码蒙版 PNG。');
-      final decoded = img.decodePng(byteData.buffer.asUint8List());
-      if (decoded == null) throw StateError('无法处理蒙版 PNG。');
-      for (final pixel in decoded) {
-        final value = pixel.r > 127 ? 255 : 0;
-        pixel
-          ..r = value
-          ..g = value
-          ..b = value
-          ..a = 255;
-      }
-      final maskBytes = img.encodePng(decoded);
+      final maskBytes = await compute(
+        _binarizeMask,
+        byteData.buffer.asUint8List(),
+      );
       final directory = await getApplicationSupportDirectory();
       final maskDirectory = Directory(p.join(directory.path, 'masks'));
       await maskDirectory.create(recursive: true);
@@ -208,6 +202,12 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
     }
   }
 
+  /// Strokes are painted fully opaque over an opaque black backdrop.
+  ///
+  /// Using [BlendMode.src] here would replace the alpha channel as well, so
+  /// anti-aliased edges became semi-transparent and survived binarisation as
+  /// grey fringes. Compositing with [BlendMode.srcOver] keeps alpha at 255 and
+  /// leaves only a greyscale ramp, which the threshold pass removes cleanly.
   void _drawStroke(Canvas canvas, Size size, _MaskStroke stroke) {
     if (stroke.points.isEmpty) return;
     final paint = Paint()
@@ -216,12 +216,33 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true
-      ..blendMode = BlendMode.src
+      ..blendMode = BlendMode.srcOver
       ..style = PaintingStyle.stroke;
     canvas.drawPath(_maskSmoothPath(stroke.points, size), paint);
   }
 
   int _align8(int value) => ((value + 7) ~/ 8) * 8;
+}
+
+/// Collapses the anti-aliased greyscale ramp into the pure black/white mask
+/// NovelAI expects. Runs off the UI isolate because full-resolution masks are
+/// several megapixels.
+Uint8List _binarizeMask(Uint8List pngBytes) {
+  final decoded = img.decodePng(pngBytes);
+  if (decoded == null) throw StateError('无法处理蒙版 PNG。');
+  final mask = img.Image(
+    width: decoded.width,
+    height: decoded.height,
+    numChannels: 3,
+  );
+  for (var y = 0; y < decoded.height; y++) {
+    for (var x = 0; x < decoded.width; x++) {
+      final pixel = decoded.getPixel(x, y);
+      final value = pixel.r >= 128 ? 255 : 0;
+      mask.setPixelRgb(x, y, value, value, value);
+    }
+  }
+  return img.encodePng(mask);
 }
 
 class _MaskOverlayPainter extends CustomPainter {
@@ -233,15 +254,19 @@ class _MaskOverlayPainter extends CustomPainter {
   final List<_MaskStroke> strokes;
   final _MaskStroke? activeStroke;
 
+  /// Strokes are drawn opaque inside an offscreen layer and the whole layer is
+  /// faded once. Painting them semi-transparent directly would darken every
+  /// self-overlap of a single stroke and misrepresent the actual mask.
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.saveLayer(Offset.zero & size, Paint());
+    canvas.saveLayer(
+      Offset.zero & size,
+      Paint()..color = Colors.white.withValues(alpha: 0.45),
+    );
     for (final stroke in [...strokes, ?activeStroke]) {
       if (stroke.points.isEmpty) continue;
       final paint = Paint()
-        ..color = stroke.eraser
-            ? Colors.transparent
-            : const Color(0xFFFF4F9A).withValues(alpha: 0.42)
+        ..color = stroke.eraser ? Colors.transparent : const Color(0xFFFF4F9A)
         ..strokeWidth = stroke.normalizedWidth * size.shortestSide
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
