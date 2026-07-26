@@ -23,14 +23,6 @@ abstract final class NativeEndpointResolver {
     return _withGatewayPrefix(endpoint);
   }
 
-  /// Official fallback for `/user/*` reads.
-  ///
-  /// NovelAI moved authenticated account reads to image.novelai.net; requests
-  /// that end up on api.novelai.net or a site catch-all answer with the
-  /// "update to the image URL" notice. When the configured endpoint returns
-  /// that notice, callers retry against the official image host directly.
-  static String officialAccountBaseUrl() => AppConstants.nativeBaseUrl;
-
   /// Official defaults retain NovelAI's required host split. Any other URL is
   /// treated as the native-format gateway documented by novelai-gateway, whose
   /// transparent NovelAI proxy is mounted under `/_api`.

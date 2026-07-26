@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:novelai_canvas/core/constants/app_constants.dart';
+import 'package:novelai_canvas/core/errors/app_exception.dart';
 import 'package:novelai_canvas/core/network/backend_mode.dart';
 import 'package:novelai_canvas/core/network/native_endpoint_interceptor.dart';
 import 'package:novelai_canvas/data/api/native/services/native_user_service.dart';
@@ -15,14 +15,8 @@ const _gatewaySettings = AppSettings(
 );
 
 void main() {
-  test('自定义端点返回错误主机提示时，订阅查询回退到官方图片域名', () async {
+  test('订阅查询只发往配置的网关，绝不直连官方域名', () async {
     final adapter = _ScriptedAdapter([
-      // NovelAI answers with 200 and a notice rather than an error status.
-      _Reply(200, {
-        'message':
-            'Please refresh NovelAI.net. If using a third-party tool, '
-            'update to the image URL.',
-      }),
       _Reply(200, {'tier': 3, 'active': true}),
     ]);
     final service = NativeSubscriptionService(_client(adapter));
@@ -31,102 +25,44 @@ void main() {
 
     expect(info.tier, 3);
     expect(info.tierName, 'Opus');
-    expect(
-      adapter.requestedUrls.first,
+    expect(adapter.requestedUrls, [
       'https://gateway.example.com/_api/user/subscription',
-    );
-    expect(
-      adapter.requestedUrls.last,
-      '${AppConstants.nativeBaseUrl}/user/subscription',
-    );
+    ]);
   });
 
-  test('提示以纯文本而非 JSON 对象返回时也会回退', () async {
+  test('网关返回错误主机提示时报配置错误，而不是绕过网关直连官方', () async {
     final adapter = _ScriptedAdapter([
       _RawReply(
         200,
         'Please refresh NovelAI.net. If using a third-party tool, '
         'update to the image URL.',
       ),
-      _Reply(200, {'tier': 3, 'active': true}),
-    ]);
-    final service = NativeSubscriptionService(_client(adapter));
-
-    expect((await service.getSubscription()).tier, 3);
-    expect(adapter.requestedUrls.length, 2);
-  });
-
-  test('提示包在 HTML 页面里时也会回退', () async {
-    final adapter = _ScriptedAdapter([
-      _RawReply(
-        200,
-        '<html><body>Please refresh NovelAI.net. '
-        'If using a third-party tool, update to the image URL.</body></html>',
-      ),
-      _Reply(200, {'tier': 3, 'active': true}),
-    ]);
-    final service = NativeSubscriptionService(_client(adapter));
-
-    expect((await service.getSubscription()).tier, 3);
-  });
-
-  test('网关返回 404 时同样回退', () async {
-    final adapter = _ScriptedAdapter([
-      _Reply(404, {'error': 'not found'}),
-      _Reply(200, {'tier': 3, 'active': true}),
-    ]);
-    final service = NativeSubscriptionService(_client(adapter));
-
-    expect((await service.getSubscription()).tier, 3);
-    expect(adapter.requestedUrls.length, 2);
-  });
-
-  test('网关返回其他错误码时也会回退，而不是直接失败', () async {
-    for (final status in const [400, 403, 500, 502]) {
-      final adapter = _ScriptedAdapter([
-        _Reply(status, {'error': 'gateway cannot serve account routes'}),
-        _Reply(200, {'tier': 3, 'active': true}),
-      ]);
-      final service = NativeSubscriptionService(_client(adapter));
-
-      expect(
-        (await service.getSubscription()).tier,
-        3,
-        reason: '状态码 $status 应触发回退',
-      );
-    }
-  });
-
-  test('两个地址都失败时，错误消息列出尝试过的主机', () async {
-    final adapter = _ScriptedAdapter([
-      _RawReply(
-        200,
-        'Please refresh NovelAI.net. If using a third-party tool, '
-        'update to the image URL.',
-      ),
-      _Reply(500, {'message': 'boom'}),
     ]);
     final service = NativeSubscriptionService(_client(adapter));
 
     await expectLater(
       service.getSubscription(),
       throwsA(
-        isA<Exception>().having(
-          (error) => error.toString(),
+        isA<ConfigurationException>().having(
+          (error) => error.message,
           'message',
-          allOf(contains('gateway.example.com'), contains('image.novelai.net')),
+          contains('image.novelai.net'),
         ),
       ),
     );
+    // Exactly one request, and it stayed on the gateway.
+    expect(adapter.requestedUrls, [
+      'https://gateway.example.com/_api/user/subscription',
+    ]);
   });
 
-  test('网关能正常返回订阅时不发起第二次请求', () async {
+  test('网关返回错误状态码时直接失败，不发起第二次请求', () async {
     final adapter = _ScriptedAdapter([
-      _Reply(200, {'tier': 1, 'active': true}),
+      _Reply(404, {'error': 'not found'}),
     ]);
     final service = NativeSubscriptionService(_client(adapter));
 
-    expect((await service.getSubscription()).tier, 1);
+    await expectLater(service.getSubscription(), throwsA(isA<Exception>()));
     expect(adapter.requestedUrls.length, 1);
   });
 }
