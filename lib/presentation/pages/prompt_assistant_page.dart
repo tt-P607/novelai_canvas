@@ -111,11 +111,6 @@ class _PromptAssistantPageState extends State<PromptAssistantPage> {
           icon: const Icon(Icons.history_rounded),
         ),
         IconButton(
-          tooltip: '归档当前会话',
-          onPressed: controller.archiveActiveSession,
-          icon: const Icon(Icons.archive_outlined),
-        ),
-        IconButton(
           tooltip: '新对话',
           onPressed: controller.newSession,
           icon: const Icon(Icons.add_comment_outlined),
@@ -325,7 +320,11 @@ class _PromptAssistantPageState extends State<PromptAssistantPage> {
                 onPressed: () => controller.unarchiveSession(session.id),
                 icon: const Icon(Icons.unarchive_outlined),
               )
-            : null,
+            : IconButton(
+                tooltip: '归档',
+                onPressed: () => controller.archiveSession(session.id),
+                icon: const Icon(Icons.archive_outlined),
+              ),
         onTap: () {
           controller.selectSession(session.id);
           Navigator.pop(sheetContext);

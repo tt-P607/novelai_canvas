@@ -49,4 +49,21 @@ class AppPreferences {
 
   Future<void> setStreamGenerationEnabled(bool value) =>
       _preferences.setBool('stream_generation_enabled', value);
+
+  /// Cached subscription tier. The tier itself is not a credential, so it may
+  /// live in plain preferences for instant display on cold start.
+  int? get subscriptionTier => _preferences.getInt('subscription_tier');
+
+  DateTime? get subscriptionCheckedAt {
+    final millis = _preferences.getInt('subscription_checked_at');
+    return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
+  }
+
+  Future<void> setSubscriptionTier(int tier, DateTime checkedAt) async {
+    await _preferences.setInt('subscription_tier', tier);
+    await _preferences.setInt(
+      'subscription_checked_at',
+      checkedAt.millisecondsSinceEpoch,
+    );
+  }
 }

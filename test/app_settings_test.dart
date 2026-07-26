@@ -75,4 +75,19 @@ void main() {
     final restored = AppPreferences(await SharedPreferences.getInstance());
     expect(restored.streamGenerationEnabled, isTrue);
   });
+
+  test('订阅等级与检查时间持久化，重启后可直接恢复', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = AppPreferences(await SharedPreferences.getInstance());
+
+    expect(preferences.subscriptionTier, isNull);
+    expect(preferences.subscriptionCheckedAt, isNull);
+
+    final checkedAt = DateTime(2026, 7, 26, 12);
+    await preferences.setSubscriptionTier(3, checkedAt);
+
+    final restored = AppPreferences(await SharedPreferences.getInstance());
+    expect(restored.subscriptionTier, 3);
+    expect(restored.subscriptionCheckedAt, checkedAt);
+  });
 }

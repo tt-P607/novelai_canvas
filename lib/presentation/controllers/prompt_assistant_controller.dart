@@ -83,9 +83,7 @@ class PromptAssistantController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> archiveActiveSession() async {
-    final id = activeSessionId;
-    if (id == null) return;
+  Future<void> archiveSession(String id) async {
     sessions = sessions
         .map(
           (session) => session.id == id
@@ -93,12 +91,14 @@ class PromptAssistantController extends ChangeNotifier {
               : session,
         )
         .toList();
-    final next = sessions.where((session) => !session.archived).firstOrNull;
-    if (next == null) {
-      _createSession(notify: true);
-      return;
+    if (activeSessionId == id) {
+      final next = sessions.where((session) => !session.archived).firstOrNull;
+      if (next == null) {
+        _createSession(notify: true);
+        return;
+      }
+      activeSessionId = next.id;
     }
-    activeSessionId = next.id;
     await _persist();
     notifyListeners();
   }

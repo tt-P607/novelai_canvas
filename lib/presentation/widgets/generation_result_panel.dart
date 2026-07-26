@@ -16,6 +16,7 @@ class GenerationResultPanel extends StatelessWidget {
     required this.totalSteps,
     required this.completedImagePath,
     this.onSendToImageTools,
+    this.onInpaint,
   });
 
   final List<int>? previewBytes;
@@ -23,6 +24,10 @@ class GenerationResultPanel extends StatelessWidget {
   final int totalSteps;
   final String? completedImagePath;
   final ValueChanged<String>? onSendToImageTools;
+
+  /// Jumps straight into mask painting with this image as the source, so
+  /// retouching does not require scrolling down to the inpaint section.
+  final ValueChanged<String>? onInpaint;
 
   @override
   Widget build(BuildContext context) {
@@ -164,6 +169,12 @@ class GenerationResultPanel extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Expanded(child: Text(isPreview ? '流式预览' : '最新生成结果')),
+        if (!isPreview && path != null && onInpaint != null)
+          IconButton(
+            tooltip: '局部重绘这张图',
+            onPressed: () => onInpaint!(path),
+            icon: const Icon(Icons.brush_outlined),
+          ),
         if (!isPreview && path != null && onSendToImageTools != null)
           IconButton(
             tooltip: '发送到图像工具',

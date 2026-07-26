@@ -30,6 +30,13 @@ class GenerationController extends ChangeNotifier {
        _subscriptionTierLoader = subscriptionTierLoader,
        _uuid = uuid,
        stream = preferences?.streamGenerationEnabled ?? false {
+    // Restore the cached tier so the badge and cost preview are correct on
+    // cold start without waiting for the network round-trip.
+    final cachedTier = preferences?.subscriptionTier;
+    if (cachedTier != null) {
+      subscriptionTier = cachedTier;
+      isOpus = cachedTier >= 3;
+    }
     _queueSubscription = _queue.states.listen((value) {
       queueState = value;
       notifyListeners();
@@ -95,6 +102,14 @@ class GenerationController extends ChangeNotifier {
 
   bool get subscriptionKnown => subscriptionTier != null;
 
+  String? get subscriptionTierName => switch (subscriptionTier) {
+    null => null,
+    1 => 'Tablet',
+    2 => 'Scroll',
+    3 => 'Opus',
+    _ => 'Paper',
+  };
+
   AnlasEstimate get anlasEstimate => estimateAnlas(
     width: width,
     height: height,
@@ -118,11 +133,14 @@ class GenerationController extends ChangeNotifier {
   /// The controller outlives the creation page, and the token may still be
   /// missing on first open, so this stays retryable and surfaces failures
   /// instead of silently pinning the account to the non-Opus branch.
+  /// Cached tiers older than this are re-validated in the background.
+  static const subscriptionTtl = Duration(hours: 6);
+
   Future<void> refreshSubscription({bool force = false}) async {
     final loader = _subscriptionTierLoader;
     if (loader == null) return;
     if (subscriptionLoading) return;
-    if (subscriptionKnown && !force) return;
+    if (subscriptionKnown && !force && !_subscriptionStale) return;
     if (_backendModeProvider() != BackendMode.native) return;
 
     subscriptionLoading = true;
@@ -132,12 +150,23 @@ class GenerationController extends ChangeNotifier {
       final tier = await loader();
       subscriptionTier = tier;
       isOpus = tier >= 3;
+      await _preferences?.setSubscriptionTier(tier, DateTime.now());
     } catch (error) {
-      subscriptionError = friendlyErrorMessage(error);
+      // A stale cached tier keeps working; only surface the failure when
+      // there is nothing to show at all.
+      if (!subscriptionKnown) {
+        subscriptionError = friendlyErrorMessage(error);
+      }
     } finally {
       subscriptionLoading = false;
       notifyListeners();
     }
+  }
+
+  bool get _subscriptionStale {
+    final checkedAt = _preferences?.subscriptionCheckedAt;
+    if (checkedAt == null) return true;
+    return DateTime.now().difference(checkedAt) > subscriptionTtl;
   }
 
   void updatePrompt(String value) => prompt = value;

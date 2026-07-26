@@ -11,6 +11,7 @@ import '../controllers/prompt_assistant_controller.dart';
 import '../widgets/advanced_reference_card.dart';
 import '../widgets/compact_snack_bar.dart';
 import '../widgets/draggable_assistant_bubble.dart';
+import '../widgets/floating_assistant_window.dart';
 import '../widgets/generation_parameter_card.dart';
 import '../widgets/generation_result_panel.dart';
 import '../widgets/glass/liquid_glass.dart';
@@ -43,7 +44,7 @@ class _CreationPageState extends State<CreationPage> {
   late final TextEditingController _customWidthController;
   late final TextEditingController _customHeightController;
   final ImagePicker _picker = ImagePicker();
-  bool _assistantMinimized = false;
+  _AssistantMode _assistantMode = _AssistantMode.hidden;
 
   GenerationController get controller => widget.controller;
 
@@ -103,7 +104,14 @@ class _CreationPageState extends State<CreationPage> {
             builder: (context, _) => CustomScrollView(
               slivers: [
                 SliverAppBar.large(
-                  title: const Text('创作'),
+                  title: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('创作'),
+                      const SizedBox(width: 10),
+                      _tierBadge(),
+                    ],
+                  ),
                   actions: [
                     IconButton(
                       tooltip: '提示词助手',
@@ -123,12 +131,25 @@ class _CreationPageState extends State<CreationPage> {
               ],
             ),
           ),
-          if (_assistantMinimized)
-            DraggableAssistantBubble(
-              onPressed: () {
-                setState(() => _assistantMinimized = false);
+          if (_assistantMode == _AssistantMode.window)
+            FloatingAssistantWindow(
+              onMinimize: () =>
+                  setState(() => _assistantMode = _AssistantMode.bubble),
+              onExpand: () {
+                setState(() => _assistantMode = _AssistantMode.hidden);
                 _openPromptAssistant();
               },
+              child: PromptAssistantPage(
+                controller: widget.promptAssistantController,
+                settingsController: widget.llmSettingsController,
+                generationController: controller,
+                embedded: true,
+              ),
+            ),
+          if (_assistantMode == _AssistantMode.bubble)
+            DraggableAssistantBubble(
+              onPressed: () =>
+                  setState(() => _assistantMode = _AssistantMode.window),
             ),
         ],
       ),
@@ -142,6 +163,7 @@ class _CreationPageState extends State<CreationPage> {
       totalSteps: controller.queueState.activeTask?.spec.steps ?? 0,
       completedImagePath: controller.latestImagePath,
       onSendToImageTools: widget.onOpenImageTools,
+      onInpaint: _inpaintLatest,
     ),
     const SizedBox(height: 14),
     _primaryActions(),
@@ -195,6 +217,52 @@ class _CreationPageState extends State<CreationPage> {
       ),
     ],
   ];
+
+  /// Compact tier chip next to the page title. Tapping it re-checks the
+  /// subscription immediately.
+  Widget _tierBadge() {
+    final colors = Theme.of(context).colorScheme;
+    final name = controller.subscriptionTierName;
+    final label = controller.subscriptionLoading && name == null
+        ? '…'
+        : (name ?? '未知等级');
+    final highlight = controller.isOpus;
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => controller.refreshSubscription(force: true),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: highlight
+              ? colors.primaryContainer
+              : colors.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              highlight
+                  ? Icons.workspace_premium_rounded
+                  : Icons.person_outline_rounded,
+              size: 14,
+              color: highlight ? colors.primary : colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: highlight
+                    ? colors.onPrimaryContainer
+                    : colors.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _queueChip() {
     final isRunning = controller.queueState.isRunning;
@@ -438,6 +506,14 @@ class _CreationPageState extends State<CreationPage> {
     if (maskPath != null) controller.setMaskImage(maskPath);
   }
 
+  /// One-tap retouch from the result panel: switch to inpaint, adopt the
+  /// image as source, and open the mask editor immediately.
+  Future<void> _inpaintLatest(String imagePath) async {
+    controller.updateMode(GenerationMode.inpaint);
+    controller.setSourceImage(imagePath);
+    await _openMaskEditor();
+  }
+
   Future<void> _openPromptAssistant() async {
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -468,10 +544,18 @@ class _CreationPageState extends State<CreationPage> {
                     ),
                   ),
                   IconButton(
+                    tooltip: '悬浮窗模式',
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      setState(() => _assistantMode = _AssistantMode.window);
+                    },
+                    icon: const Icon(Icons.picture_in_picture_alt_rounded),
+                  ),
+                  IconButton(
                     tooltip: '缩小为悬浮球',
                     onPressed: () {
                       Navigator.pop(sheetContext);
-                      setState(() => _assistantMinimized = true);
+                      setState(() => _assistantMode = _AssistantMode.bubble);
                     },
                     icon: const Icon(Icons.minimize_rounded),
                   ),
@@ -540,3 +624,6 @@ class _CreationPageState extends State<CreationPage> {
     GenerationTaskStatus.interrupted => '生成中断',
   };
 }
+
+/// How the prompt assistant is docked on the creation page.
+enum _AssistantMode { hidden, bubble, window }
