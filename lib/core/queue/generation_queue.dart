@@ -207,7 +207,9 @@ class GenerationQueue {
       final stored = await _imageStore.save(
         taskId: running.id,
         bytes: bytes,
-        extension: _extensionFor(firstImage.mimeType),
+        extension: GenerationImageStore.extensionForMimeType(
+          firstImage.mimeType,
+        ),
       );
       running = running.copyWith(
         status: GenerationTaskStatus.completed,
@@ -298,12 +300,6 @@ class GenerationQueue {
 
   String _errorMessage(Object error) =>
       error is AppException ? error.message : error.toString();
-
-  String _extensionFor(String mimeType) => switch (mimeType.toLowerCase()) {
-    'image/jpeg' => 'jpg',
-    'image/webp' => 'webp',
-    _ => 'png',
-  };
 
   void _emitState() {
     if (!_stateController.isClosed) _stateController.add(state);

@@ -1,16 +1,19 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../domain/entities/advanced_generation.dart';
+import '../../core/errors/error_message.dart';
 import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
 import '../controllers/prompt_assistant_controller.dart';
-import '../widgets/character_position_grid.dart';
-import '../widgets/fullscreen_image_preview.dart';
+import '../widgets/advanced_reference_card.dart';
+import '../widgets/compact_snack_bar.dart';
+import '../widgets/draggable_assistant_bubble.dart';
+import '../widgets/generation_parameter_card.dart';
+import '../widgets/generation_result_panel.dart';
+import '../widgets/glass/liquid_glass.dart';
 import 'mask_editor_page.dart';
 import 'prompt_assistant_page.dart';
 
@@ -41,7 +44,6 @@ class _CreationPageState extends State<CreationPage> {
   late final TextEditingController _customHeightController;
   final ImagePicker _picker = ImagePicker();
   bool _assistantMinimized = false;
-  Offset? _assistantBubbleOffset;
 
   GenerationController get controller => widget.controller;
 
@@ -63,28 +65,6 @@ class _CreationPageState extends State<CreationPage> {
     controller.addListener(_syncControllers);
   }
 
-  void _syncControllers() {
-    if (_promptController.text != controller.prompt) {
-      _promptController.text = controller.prompt;
-    }
-    if (_negativeController.text != controller.negativePrompt) {
-      _negativeController.text = controller.negativePrompt;
-    }
-    if (_modelController.text != controller.model) {
-      _modelController.text = controller.model;
-    }
-    final seed = controller.seed.toString();
-    if (_seedController.text != seed) _seedController.text = seed;
-    final width = controller.width.toString();
-    final height = controller.height.toString();
-    if (_customWidthController.text != width) {
-      _customWidthController.text = width;
-    }
-    if (_customHeightController.text != height) {
-      _customHeightController.text = height;
-    }
-  }
-
   @override
   void dispose() {
     controller.removeListener(_syncControllers);
@@ -95,6 +75,21 @@ class _CreationPageState extends State<CreationPage> {
     _customWidthController.dispose();
     _customHeightController.dispose();
     super.dispose();
+  }
+
+  /// Mirrors controller state back into the text fields after the assistant or
+  /// a history reuse changed values programmatically.
+  void _syncControllers() {
+    _syncField(_promptController, controller.prompt);
+    _syncField(_negativeController, controller.negativePrompt);
+    _syncField(_modelController, controller.model);
+    _syncField(_seedController, controller.seed.toString());
+    _syncField(_customWidthController, controller.width.toString());
+    _syncField(_customHeightController, controller.height.toString());
+  }
+
+  void _syncField(TextEditingController field, String value) {
+    if (field.text != value) field.text = value;
   }
 
   @override
@@ -116,128 +111,22 @@ class _CreationPageState extends State<CreationPage> {
                     ),
                     Padding(
                       padding: const EdgeInsets.only(right: 16),
-                      child: Chip(
-                        avatar: Icon(
-                          controller.queueState.isRunning
-                              ? Icons.hourglass_top_rounded
-                              : Icons.cloud_done_rounded,
-                          size: 18,
-                        ),
-                        label: Text(
-                          controller.queueState.isRunning
-                              ? '生成中 · ${controller.queueState.pendingCount} 排队'
-                              : '${controller.queueState.pendingCount} 个任务排队',
-                        ),
-                      ),
+                      child: _queueChip(),
                     ),
                   ],
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-                  sliver: SliverList.list(
-                    children: [
-                      _resultPanel(),
-                      const SizedBox(height: 14),
-                      _primaryActions(),
-                      const SizedBox(height: 18),
-                      _modeSelector(),
-                      const SizedBox(height: 14),
-                      _assistantShortcut(),
-                      const SizedBox(height: 18),
-                      TextField(
-                        controller: _promptController,
-                        minLines: 3,
-                        maxLines: 7,
-                        onChanged: controller.updatePrompt,
-                        decoration: const InputDecoration(
-                          labelText: '正向提示词',
-                          hintText: '1girl, masterpiece, cinematic lighting...',
-                          alignLabelWithHint: true,
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _negativeController,
-                        minLines: 2,
-                        maxLines: 4,
-                        onChanged: controller.updateNegativePrompt,
-                        decoration: const InputDecoration(
-                          labelText: '负向提示词',
-                          alignLabelWithHint: true,
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      if (controller.mode != GenerationMode.textToImage) ...[
-                        const SizedBox(height: 18),
-                        _imageInputCard(),
-                      ],
-                      const SizedBox(height: 18),
-                      _parameterCard(),
-                      if (controller.mode == GenerationMode.textToImage) ...[
-                        const SizedBox(height: 18),
-                        _advancedReferenceCard(),
-                      ],
-                    ],
-                  ),
+                  sliver: SliverList.list(children: _sections()),
                 ),
               ],
             ),
           ),
           if (_assistantMinimized)
-            LayoutBuilder(
-              builder: (context, constraints) {
-                const size = 52.0;
-                const margin = 12.0;
-                final fallback = Offset(
-                  constraints.maxWidth - size - margin,
-                  constraints.maxHeight - size - 96,
-                );
-                final value = _assistantBubbleOffset ?? fallback;
-                final clamped = Offset(
-                  value.dx.clamp(margin, constraints.maxWidth - size - margin),
-                  value.dy.clamp(margin, constraints.maxHeight - size - margin),
-                );
-                return Positioned(
-                  left: clamped.dx,
-                  top: clamped.dy,
-                  child: GestureDetector(
-                    onPanUpdate: (details) {
-                      setState(() {
-                        _assistantBubbleOffset = Offset(
-                          (clamped.dx + details.delta.dx).clamp(
-                            margin,
-                            constraints.maxWidth - size - margin,
-                          ),
-                          (clamped.dy + details.delta.dy).clamp(
-                            margin,
-                            constraints.maxHeight - size - margin,
-                          ),
-                        );
-                      });
-                    },
-                    onPanEnd: (_) {
-                      final current = _assistantBubbleOffset ?? clamped;
-                      setState(() {
-                        _assistantBubbleOffset = Offset(
-                          current.dx + size / 2 < constraints.maxWidth / 2
-                              ? margin
-                              : constraints.maxWidth - size - margin,
-                          current.dy,
-                        );
-                      });
-                    },
-                    child: FloatingActionButton.small(
-                      heroTag: 'prompt-assistant-bubble',
-                      tooltip: '打开提示词助手',
-                      onPressed: () {
-                        setState(() => _assistantMinimized = false);
-                        _openPromptAssistant();
-                      },
-                      child: const Icon(Icons.auto_fix_high_rounded),
-                    ),
-                  ),
-                );
+            DraggableAssistantBubble(
+              onPressed: () {
+                setState(() => _assistantMinimized = false);
+                _openPromptAssistant();
               },
             ),
         ],
@@ -245,108 +134,76 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
-  Widget _resultPanel() {
-    final previewBytes = controller.queueState.previewImageBytes;
-    final completedPath = controller.latestImagePath;
-    final hasPreview = previewBytes != null;
-    final hasCompleted =
-        completedPath != null && File(completedPath).existsSync();
-    if (!hasPreview && !hasCompleted) {
-      return Container(
-        height: 156,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-        ),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.image_outlined, size: 34),
-              SizedBox(height: 8),
-              Text('生成结果会显示在这里'),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          RepaintBoundary(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              layoutBuilder: (currentChild, previousChildren) => Stack(
-                alignment: Alignment.center,
-                children: [...previousChildren, ?currentChild],
-              ),
-              child: InkWell(
-                onTap: hasPreview
-                    ? () => FullscreenImagePreview.showMemory(
-                        context,
-                        Uint8List.fromList(previewBytes),
-                      )
-                    : () => FullscreenImagePreview.showFile(
-                        context,
-                        completedPath!,
-                      ),
-                child: hasPreview
-                    ? Image.memory(
-                        Uint8List.fromList(previewBytes),
-                        key: const ValueKey('stream-preview'),
-                        width: double.infinity,
-                        height: 280,
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                        filterQuality: FilterQuality.low,
-                      )
-                    : Image.file(
-                        File(completedPath!),
-                        key: ValueKey(completedPath),
-                        width: double.infinity,
-                        height: 280,
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                      ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(
-              children: [
-                Icon(
-                  hasPreview
-                      ? Icons.motion_photos_on_outlined
-                      : Icons.check_circle_outline_rounded,
-                  size: 18,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    hasPreview
-                        ? '流式预览 · Step ${controller.queueState.previewStep ?? 0}'
-                        : '最新生成结果',
-                  ),
-                ),
-                if (!hasPreview && completedPath != null)
-                  IconButton(
-                    tooltip: '发送到图像工具',
-                    onPressed: () =>
-                        widget.onOpenImageTools?.call(completedPath),
-                    icon: const Icon(Icons.auto_fix_high_outlined),
-                  ),
-              ],
-            ),
-          ),
-        ],
+  List<Widget> _sections() => [
+    GenerationResultPanel(
+      previewBytes: controller.queueState.previewImageBytes,
+      previewStep: controller.queueState.previewStep,
+      completedImagePath: controller.latestImagePath,
+      onSendToImageTools: widget.onOpenImageTools,
+    ),
+    const SizedBox(height: 14),
+    _primaryActions(),
+    const SizedBox(height: 18),
+    _modeSelector(),
+    const SizedBox(height: 14),
+    _assistantShortcut(),
+    const SizedBox(height: 18),
+    TextField(
+      controller: _promptController,
+      minLines: 3,
+      maxLines: 7,
+      onChanged: controller.updatePrompt,
+      decoration: const InputDecoration(
+        labelText: '正向提示词',
+        hintText: '1girl, masterpiece, cinematic lighting...',
+        alignLabelWithHint: true,
+        border: OutlineInputBorder(),
       ),
+    ),
+    const SizedBox(height: 14),
+    TextField(
+      controller: _negativeController,
+      minLines: 2,
+      maxLines: 4,
+      onChanged: controller.updateNegativePrompt,
+      decoration: const InputDecoration(
+        labelText: '负向提示词',
+        alignLabelWithHint: true,
+        border: OutlineInputBorder(),
+      ),
+    ),
+    if (controller.mode != GenerationMode.textToImage) ...[
+      const SizedBox(height: 18),
+      _imageInputCard(),
+    ],
+    const SizedBox(height: 18),
+    GenerationParameterCard(
+      controller: controller,
+      modelController: _modelController,
+      seedController: _seedController,
+      widthController: _customWidthController,
+      heightController: _customHeightController,
+      onApplyCustomSize: _applyCustomSize,
+    ),
+    if (controller.mode == GenerationMode.textToImage) ...[
+      const SizedBox(height: 18),
+      AdvancedReferenceCard(
+        controller: controller,
+        onAddVibe: _pickVibeImage,
+        onAddCharacterReference: _pickCharacterReference,
+      ),
+    ],
+  ];
+
+  Widget _queueChip() {
+    final isRunning = controller.queueState.isRunning;
+    final pending = controller.queueState.pendingCount;
+    return Chip(
+      avatar: Icon(
+        isRunning ? Icons.hourglass_top_rounded : Icons.cloud_done_rounded,
+        size: 18,
+      ),
+      label: Text(isRunning ? '生成中 · $pending 排队' : '$pending 个任务排队'),
     );
   }
 
@@ -360,7 +217,7 @@ class _CreationPageState extends State<CreationPage> {
       ),
       if (controller.latestTask != null) ...[
         const SizedBox(height: 8),
-        _statusCard(),
+        _statusCard(controller.latestTask!),
       ],
       if (controller.queueState.isRunning) ...[
         const SizedBox(height: 8),
@@ -373,37 +230,51 @@ class _CreationPageState extends State<CreationPage> {
     ],
   );
 
+  Widget _statusCard(GenerationTask task) {
+    final color = switch (task.status) {
+      GenerationTaskStatus.completed => Colors.green,
+      GenerationTaskStatus.failed => Colors.red,
+      GenerationTaskStatus.cancelled => Colors.orange,
+      _ => Theme.of(context).colorScheme.primary,
+    };
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.bubble_chart_rounded, color: color),
+        title: Text(_statusLabel(task.status)),
+        subtitle: Text(task.errorMessage ?? task.spec.prompt),
+        trailing: task.status == GenerationTaskStatus.running
+            ? const SizedBox.square(
+                dimension: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : null,
+      ),
+    );
+  }
+
   Widget _assistantShortcut() {
     final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: colors.secondaryContainer.withValues(alpha: 0.32),
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: _openPromptAssistant,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Icon(Icons.auto_fix_high_rounded, color: colors.secondary),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '自然语言写提示词',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    SizedBox(height: 2),
-                    Text('点击即用：描述画面，整理后直接回填下方输入框'),
-                  ],
-                ),
-              ),
-              const Icon(Icons.arrow_forward_rounded),
-            ],
+    return LiquidGlass(
+      radius: 18,
+      tintOpacity: 0.10,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      onTap: _openPromptAssistant,
+      child: Row(
+        children: [
+          Icon(Icons.auto_fix_high_rounded, color: colors.secondary),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('自然语言写提示词', style: TextStyle(fontWeight: FontWeight.w800)),
+                SizedBox(height: 2),
+                Text('点击即用：描述画面，整理后直接回填下方输入框'),
+              ],
+            ),
           ),
-        ),
+          const Icon(Icons.arrow_forward_rounded),
+        ],
       ),
     );
   }
@@ -429,398 +300,6 @@ class _CreationPageState extends State<CreationPage> {
     selected: {controller.mode},
     onSelectionChanged: (selection) => controller.updateMode(selection.single),
   );
-
-  Widget _parameterCard() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('生成参数', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _modelController,
-            onChanged: controller.updateModel,
-            decoration: const InputDecoration(
-              labelText: '模型',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _officialSizeValue(),
-            decoration: const InputDecoration(labelText: '官方画幅预设'),
-            items: const [
-              DropdownMenuItem(
-                value: '832x1216',
-                child: Text('竖图 · 832 × 1216'),
-              ),
-              DropdownMenuItem(
-                value: '1024x1024',
-                child: Text('方图 · 1024 × 1024'),
-              ),
-              DropdownMenuItem(
-                value: '1216x832',
-                child: Text('横图 · 1216 × 832'),
-              ),
-              DropdownMenuItem(
-                value: '1024x1536',
-                child: Text('大竖图 · 1024 × 1536 · 消耗 Anlas'),
-              ),
-              DropdownMenuItem(
-                value: '1536x1024',
-                child: Text('大横图 · 1536 × 1024 · 消耗 Anlas'),
-              ),
-              DropdownMenuItem(value: 'custom', child: Text('自定义画幅')),
-            ],
-            onChanged: (value) {
-              if (value == null || value == 'custom') return;
-              final parts = value.split('x');
-              controller.updateSize(
-                width: int.parse(parts[0]),
-                height: int.parse(parts[1]),
-              );
-            },
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _customWidthController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: '自定义宽度'),
-                  onSubmitted: (_) => _applyCustomSize(),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Text('×'),
-              ),
-              Expanded(
-                child: TextField(
-                  controller: _customHeightController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: '自定义高度'),
-                  onSubmitted: (_) => _applyCustomSize(),
-                ),
-              ),
-              IconButton.filledTonal(
-                tooltip: '应用自定义画幅',
-                onPressed: _applyCustomSize,
-                icon: const Icon(Icons.check_rounded),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '范围 64–1600，保存时自动对齐到最接近的 64 倍数。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 16),
-          Text('步数 ${controller.steps}'),
-          Slider(
-            value: controller.steps.toDouble(),
-            min: 1,
-            max: 50,
-            divisions: 49,
-            onChanged: controller.updateSteps,
-          ),
-          Text('提示词相关性 ${controller.scale.toStringAsFixed(1)}'),
-          Slider(
-            value: controller.scale,
-            min: 1,
-            max: 10,
-            divisions: 18,
-            onChanged: controller.updateScale,
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _seedController,
-                  keyboardType: TextInputType.number,
-                  onChanged: controller.updateSeed,
-                  decoration: const InputDecoration(
-                    labelText: 'Seed（0 为随机）',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: '随机 Seed',
-                onPressed: controller.randomizeSeed,
-                icon: const Icon(Icons.casino_rounded),
-              ),
-            ],
-          ),
-          if (controller.mode != GenerationMode.textToImage) ...[
-            const SizedBox(height: 12),
-            Text('重绘强度 ${controller.strength.toStringAsFixed(2)}'),
-            Slider(
-              value: controller.strength,
-              min: 0,
-              max: 1,
-              divisions: 20,
-              onChanged: controller.updateStrength,
-            ),
-            Text('噪声 ${controller.noise.toStringAsFixed(2)}'),
-            Slider(
-              value: controller.noise,
-              min: 0,
-              max: 1,
-              divisions: 20,
-              onChanged: controller.updateNoise,
-            ),
-          ],
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            secondary: const Icon(Icons.stream_rounded),
-            title: const Text('流式生成'),
-            value: controller.stream,
-            onChanged: controller.updateStream,
-          ),
-          if (controller.mode == GenerationMode.inpaint)
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('边缘融合'),
-              subtitle: const Text('默认开启，将原图叠加到结果边缘以减少局部重绘割裂'),
-              value: controller.addOriginalImage,
-              onChanged: controller.updateAddOriginalImage,
-            ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _advancedReferenceCard() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('高级参考', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          const Text('Vibe 控制风格；角色参考仅支持原生 V4.5；多角色最多 6 个。'),
-          const Divider(height: 28),
-          Row(
-            children: [
-              const Expanded(child: Text('Vibe Transfer')),
-              TextButton.icon(
-                onPressed: _pickVibeImage,
-                icon: const Icon(Icons.add_photo_alternate_outlined),
-                label: const Text('添加'),
-              ),
-            ],
-          ),
-          ...controller.vibeReferences.indexed.map(
-            (entry) => _vibeTile(entry.$1, entry.$2),
-          ),
-          const Divider(height: 28),
-          Row(
-            children: [
-              const Expanded(child: Text('V4.5 角色参考')),
-              TextButton.icon(
-                onPressed: _pickCharacterReference,
-                icon: const Icon(Icons.person_add_alt_rounded),
-                label: const Text('添加'),
-              ),
-            ],
-          ),
-          ...controller.characterReferences.indexed.map(
-            (entry) => _characterReferenceTile(entry.$1, entry.$2),
-          ),
-          const Divider(height: 28),
-          Row(
-            children: [
-              const Expanded(child: Text('多角色与坐标')),
-              TextButton.icon(
-                onPressed: controller.characterPrompts.length >= 6
-                    ? null
-                    : controller.addCharacter,
-                icon: const Icon(Icons.group_add_outlined),
-                label: const Text('添加角色'),
-              ),
-            ],
-          ),
-          ...controller.characterPrompts.indexed.map(
-            (entry) => _characterTile(entry.$1, entry.$2),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _vibeTile(int index, VibeReference reference) => ExpansionTile(
-    leading: reference.imagePath == null
-        ? const Icon(Icons.blur_on_rounded)
-        : ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.file(
-              File(reference.imagePath!),
-              width: 44,
-              height: 44,
-              fit: BoxFit.cover,
-            ),
-          ),
-    title: Text('Vibe ${index + 1}'),
-    subtitle: Text(
-      '强度 ${reference.strength.toStringAsFixed(2)} · 提取 ${reference.informationExtracted.toStringAsFixed(2)}',
-    ),
-    trailing: IconButton(
-      onPressed: () => controller.removeVibeReference(index),
-      icon: const Icon(Icons.delete_outline),
-    ),
-    children: [
-      Text('参考强度 ${reference.strength.toStringAsFixed(2)}'),
-      Slider(
-        value: reference.strength,
-        min: 0.01,
-        max: 1,
-        divisions: 99,
-        onChanged: (value) => controller.updateVibeReference(
-          index,
-          reference.copyWith(strength: value),
-        ),
-      ),
-      Text('信息提取 ${reference.informationExtracted.toStringAsFixed(2)}'),
-      Slider(
-        value: reference.informationExtracted,
-        min: 0.01,
-        max: 1,
-        divisions: 99,
-        onChanged: (value) => controller.updateVibeReference(
-          index,
-          reference.copyWith(informationExtracted: value),
-        ),
-      ),
-    ],
-  );
-
-  Widget _characterReferenceTile(int index, CharacterReference reference) =>
-      ExpansionTile(
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: Image.file(
-            File(reference.imagePath),
-            width: 44,
-            height: 44,
-            fit: BoxFit.cover,
-          ),
-        ),
-        title: Text('角色参考 ${index + 1} · +5A'),
-        subtitle: Text(reference.description),
-        trailing: IconButton(
-          onPressed: () => controller.removeCharacterReference(index),
-          icon: const Icon(Icons.delete_outline),
-        ),
-        children: [
-          DropdownButtonFormField<CharacterReferenceType>(
-            initialValue: reference.type,
-            decoration: const InputDecoration(labelText: '参考类型'),
-            items: const [
-              DropdownMenuItem(
-                value: CharacterReferenceType.characterAndStyle,
-                child: Text('角色与画风'),
-              ),
-              DropdownMenuItem(
-                value: CharacterReferenceType.character,
-                child: Text('仅角色'),
-              ),
-              DropdownMenuItem(
-                value: CharacterReferenceType.style,
-                child: Text('仅画风'),
-              ),
-            ],
-            onChanged: (value) => controller.updateCharacterReference(
-              index,
-              reference.copyWith(type: value),
-            ),
-          ),
-          Text('强度 ${reference.strength.toStringAsFixed(2)}'),
-          Slider(
-            value: reference.strength,
-            min: 0,
-            max: 1,
-            divisions: 20,
-            onChanged: (value) => controller.updateCharacterReference(
-              index,
-              reference.copyWith(strength: value),
-            ),
-          ),
-          Text('忠诚度 ${reference.fidelity.toStringAsFixed(2)}'),
-          Slider(
-            value: reference.fidelity,
-            min: 0,
-            max: 1,
-            divisions: 20,
-            onChanged: (value) => controller.updateCharacterReference(
-              index,
-              reference.copyWith(fidelity: value),
-            ),
-          ),
-        ],
-      );
-
-  Widget _characterTile(int index, CharacterPrompt character) => Card.outlined(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text('角色 ${index + 1}')),
-              Switch.adaptive(
-                value: character.enabled,
-                onChanged: (value) => controller.updateCharacter(
-                  index,
-                  character.copyWith(enabled: value),
-                ),
-              ),
-              IconButton(
-                onPressed: () => controller.removeCharacter(index),
-                icon: const Icon(Icons.close_rounded),
-              ),
-            ],
-          ),
-          TextFormField(
-            initialValue: character.prompt,
-            onChanged: (value) => controller.updateCharacter(
-              index,
-              character.copyWith(prompt: value),
-            ),
-            decoration: const InputDecoration(labelText: '角色正向提示词'),
-          ),
-          TextFormField(
-            initialValue: character.negativePrompt,
-            onChanged: (value) => controller.updateCharacter(
-              index,
-              character.copyWith(negativePrompt: value),
-            ),
-            decoration: const InputDecoration(labelText: '角色负向提示词'),
-          ),
-          const SizedBox(height: 12),
-          CharacterPositionGrid(
-            value: character.position,
-            onChanged: (position) => controller.updateCharacter(
-              index,
-              character.copyWith(position: position),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Future<void> _pickVibeImage() async {
-    final image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) controller.addVibeReference(image.path);
-  }
-
-  Future<void> _pickCharacterReference() async {
-    final image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) controller.addCharacterReference(image.path);
-  }
 
   Widget _imageInputCard() => Card(
     child: Padding(
@@ -863,33 +342,19 @@ class _CreationPageState extends State<CreationPage> {
     ),
   );
 
-  Widget _statusCard() {
-    final task = controller.latestTask;
-    if (task == null) return const SizedBox.shrink();
-    final color = switch (task.status) {
-      GenerationTaskStatus.completed => Colors.green,
-      GenerationTaskStatus.failed => Colors.red,
-      GenerationTaskStatus.cancelled => Colors.orange,
-      _ => Theme.of(context).colorScheme.primary,
-    };
-    return Card(
-      child: ListTile(
-        leading: Icon(Icons.bubble_chart_rounded, color: color),
-        title: Text(_statusLabel(task.status)),
-        subtitle: Text(task.errorMessage ?? task.spec.prompt),
-        trailing: task.status == GenerationTaskStatus.running
-            ? const SizedBox.square(
-                dimension: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : null,
-      ),
-    );
-  }
-
   Future<void> _pickSourceImage() async {
     final image = await _picker.pickImage(source: ImageSource.gallery);
     if (image != null) controller.setSourceImage(image.path);
+  }
+
+  Future<void> _pickVibeImage() async {
+    final image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) controller.addVibeReference(image.path);
+  }
+
+  Future<void> _pickCharacterReference() async {
+    final image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) controller.addCharacterReference(image.path);
   }
 
   Future<void> _openMaskEditor() async {
@@ -978,19 +443,6 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
-  String _officialSizeValue() {
-    final value = '${controller.width}x${controller.height}';
-    return const {
-          '832x1216',
-          '1024x1024',
-          '1216x832',
-          '1024x1536',
-          '1536x1024',
-        }.contains(value)
-        ? value
-        : 'custom';
-  }
-
   void _applyCustomSize() {
     controller.updateCustomSize(
       width: _customWidthController.text,
@@ -1002,39 +454,19 @@ class _CreationPageState extends State<CreationPage> {
     try {
       final task = await controller.submit();
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            width: 210,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            content: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.schedule_rounded, size: 18),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    task.status == GenerationTaskStatus.running
-                        ? '已开始生成'
-                        : '已加入生成队列',
-                  ),
-                ),
-              ],
-            ),
-            duration: const Duration(milliseconds: 1400),
-          ),
-        );
+      showCompactSnackBar(
+        context,
+        icon: Icons.schedule_rounded,
+        message: task.status == GenerationTaskStatus.running
+            ? '已开始生成'
+            : '已加入生成队列',
+      );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Bad state: ', '')),
-        ),
+      showCompactSnackBar(
+        context,
+        icon: Icons.error_outline_rounded,
+        message: friendlyErrorMessage(error),
       );
     }
   }

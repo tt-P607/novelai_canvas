@@ -9,6 +9,14 @@ import 'package:path_provider/path_provider.dart';
 class GenerationImageStore {
   const GenerationImageStore();
 
+  /// Maps a response content type to the file extension used on disk.
+  static String extensionForMimeType(String mimeType) =>
+      switch (mimeType.toLowerCase()) {
+        'image/jpeg' => 'jpg',
+        'image/webp' => 'webp',
+        _ => 'png',
+      };
+
   Future<StoredGenerationImage> save({
     required String taskId,
     required Uint8List bytes,

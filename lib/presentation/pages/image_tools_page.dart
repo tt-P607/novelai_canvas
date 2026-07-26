@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../domain/entities/director_emotion.dart';
 import '../../domain/repositories/image_tools_repository.dart';
 import '../controllers/image_tools_controller.dart';
 import '../widgets/fullscreen_image_preview.dart';
@@ -259,16 +260,18 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
           }.contains(controller.selectedTool)) ...[
             const SizedBox(height: 12),
             if (controller.selectedTool == DirectorTool.emotion) ...[
-              DropdownButtonFormField<String>(
+              DropdownButtonFormField<DirectorEmotion>(
                 initialValue: controller.selectedEmotion,
                 decoration: const InputDecoration(
                   labelText: '表情',
                   border: OutlineInputBorder(),
                 ),
-                items: directorEmotionPrompts.keys
+                items: DirectorEmotion.values
                     .map(
-                      (label) =>
-                          DropdownMenuItem(value: label, child: Text(label)),
+                      (emotion) => DropdownMenuItem(
+                        value: emotion,
+                        child: Text(emotion.label),
+                      ),
                     )
                     .toList(),
                 onChanged: (value) {

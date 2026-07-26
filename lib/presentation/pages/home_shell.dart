@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../../domain/repositories/secure_credential_store.dart';
@@ -8,6 +10,7 @@ import '../controllers/history_controller.dart';
 import '../controllers/image_tools_controller.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
 import '../controllers/prompt_assistant_controller.dart';
+import '../widgets/glass/liquid_glass.dart';
 import 'creation_page.dart';
 import 'history_page.dart';
 import 'image_tools_page.dart';
@@ -68,36 +71,60 @@ class _HomeShellState extends State<HomeShell> {
       ),
     ];
 
-    return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() => _selectedIndex = index);
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.auto_awesome_outlined),
-            selectedIcon: Icon(Icons.auto_awesome_rounded),
-            label: '创作',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.photo_library_outlined),
-            selectedIcon: Icon(Icons.photo_library_rounded),
-            label: '作品',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.grid_view_outlined),
-            selectedIcon: Icon(Icons.grid_view_rounded),
-            label: '工具',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded),
-            label: '设置',
-          ),
-        ],
+    return LiquidGlassBackdrop(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        extendBody: true,
+        body: IndexedStack(index: _selectedIndex, children: pages),
+        bottomNavigationBar: _glassNavigationBar(),
       ),
     );
   }
+
+  /// The bar floats above page content, so it blurs the scrolling body instead
+  /// of painting an opaque strip over it.
+  Widget _glassNavigationBar() => ClipRect(
+    child: BackdropFilter(
+      filter: ImageFilter.blur(
+        sigmaX: GlassSpec.blurSigma,
+        sigmaY: GlassSpec.blurSigma,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.07),
+          border: Border(
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+          ),
+        ),
+        child: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (index) {
+            setState(() => _selectedIndex = index);
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.auto_awesome_outlined),
+              selectedIcon: Icon(Icons.auto_awesome_rounded),
+              label: '创作',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.photo_library_outlined),
+              selectedIcon: Icon(Icons.photo_library_rounded),
+              label: '作品',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.grid_view_outlined),
+              selectedIcon: Icon(Icons.grid_view_rounded),
+              label: '工具',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings_rounded),
+              label: '设置',
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

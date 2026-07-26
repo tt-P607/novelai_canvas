@@ -100,9 +100,8 @@ class GenerationRepositoryImpl implements GenerationRepository {
     }
     final cancelToken = _createCancelToken(task.id);
     try {
-      final request = NativeStreamRequestDto(
-        await _nativeRequestPayload(task.spec, cancelToken: cancelToken),
-      );
+      final native = await _nativeRequest(task.spec, cancelToken: cancelToken);
+      final request = NativeStreamRequestDto(native.toPayload());
       await for (final event in _nativeStreamService.generate(
         request,
         cancelToken: cancelToken,
@@ -128,33 +127,18 @@ class GenerationRepositoryImpl implements GenerationRepository {
     GenerationTask task,
     CancelToken cancelToken,
   ) async {
-    final spec = task.spec;
-    return switch (spec.mode) {
-      GenerationMode.textToImage => _nativeTextToImageService.generate(
-        await _nativeTextRequest(spec, cancelToken: cancelToken),
+    final native = await _nativeRequest(task.spec, cancelToken: cancelToken);
+    return switch (native) {
+      _NativeTextToImage(:final dto) => _nativeTextToImageService.generate(
+        dto,
         cancelToken: cancelToken,
       ),
-      GenerationMode.imageToImage => _nativeImageToImageService.generate(
-        NativeImageToImageRequestDto(
-          prompt: spec.prompt,
-          model: spec.model,
-          parameters: await _nativeParameters(spec, cancelToken: cancelToken),
-          image: await _readBase64(spec.sourceImagePath, '图生图源图片'),
-          strength: spec.strength,
-          noise: spec.noise,
-        ),
+      _NativeImageToImage(:final dto) => _nativeImageToImageService.generate(
+        dto,
         cancelToken: cancelToken,
       ),
-      GenerationMode.inpaint => _nativeInpaintService.generate(
-        NativeInpaintRequestDto(
-          prompt: spec.prompt,
-          model: spec.model,
-          parameters: await _nativeParameters(spec, cancelToken: cancelToken),
-          image: await _readBase64(spec.sourceImagePath, '局部重绘源图片'),
-          mask: await _readBase64(spec.maskImagePath, '局部重绘蒙版'),
-          strength: spec.strength,
-          noise: spec.noise,
-        ),
+      _NativeInpaint(:final dto) => _nativeInpaintService.generate(
+        dto,
         cancelToken: cancelToken,
       ),
     };
@@ -227,32 +211,32 @@ class GenerationRepositoryImpl implements GenerationRepository {
     };
   }
 
-  Future<Map<String, Object?>> _nativeRequestPayload(
+  /// Builds the request DTO once so plain and streaming generation can never
+  /// drift apart: the streaming endpoint only re-serialises the same payload.
+  Future<_NativeRequest> _nativeRequest(
     GenerationSpec spec, {
     CancelToken? cancelToken,
   }) async {
     final parameters = await _nativeParameters(spec, cancelToken: cancelToken);
     return switch (spec.mode) {
-      GenerationMode.textToImage =>
-        const NativeTextToImageRequestBuilder().build(
-          NativeTextToImageRequestDto(
-            prompt: spec.prompt,
-            model: spec.model,
-            parameters: parameters,
-          ),
+      GenerationMode.textToImage => _NativeTextToImage(
+        NativeTextToImageRequestDto(
+          prompt: spec.prompt,
+          model: spec.model,
+          parameters: parameters,
         ),
-      GenerationMode.imageToImage =>
-        const NativeImageToImageRequestBuilder().build(
-          NativeImageToImageRequestDto(
-            prompt: spec.prompt,
-            model: spec.model,
-            parameters: parameters,
-            image: await _readBase64(spec.sourceImagePath, '图生图源图片'),
-            strength: spec.strength,
-            noise: spec.noise,
-          ),
+      ),
+      GenerationMode.imageToImage => _NativeImageToImage(
+        NativeImageToImageRequestDto(
+          prompt: spec.prompt,
+          model: spec.model,
+          parameters: parameters,
+          image: await _readBase64(spec.sourceImagePath, '图生图源图片'),
+          strength: spec.strength,
+          noise: spec.noise,
         ),
-      GenerationMode.inpaint => const NativeInpaintRequestBuilder().build(
+      ),
+      GenerationMode.inpaint => _NativeInpaint(
         NativeInpaintRequestDto(
           prompt: spec.prompt,
           model: spec.model,
@@ -265,15 +249,6 @@ class GenerationRepositoryImpl implements GenerationRepository {
       ),
     };
   }
-
-  Future<NativeTextToImageRequestDto> _nativeTextRequest(
-    GenerationSpec spec, {
-    CancelToken? cancelToken,
-  }) async => NativeTextToImageRequestDto(
-    prompt: spec.prompt,
-    model: spec.model,
-    parameters: await _nativeParameters(spec, cancelToken: cancelToken),
-  );
 
   Future<NativeGenerationParametersDto> _nativeParameters(
     GenerationSpec spec, {
@@ -511,4 +486,42 @@ class GenerationRepositoryImpl implements GenerationRepository {
     if (lower.endsWith('.webp')) return 'image/webp';
     return 'image/png';
   }
+}
+
+/// A fully built native request, kept mode-safe so the caller either dispatches
+/// it to the matching service or serialises it for the streaming endpoint.
+sealed class _NativeRequest {
+  const _NativeRequest();
+
+  Map<String, Object?> toPayload();
+}
+
+class _NativeTextToImage extends _NativeRequest {
+  const _NativeTextToImage(this.dto);
+
+  final NativeTextToImageRequestDto dto;
+
+  @override
+  Map<String, Object?> toPayload() =>
+      const NativeTextToImageRequestBuilder().build(dto);
+}
+
+class _NativeImageToImage extends _NativeRequest {
+  const _NativeImageToImage(this.dto);
+
+  final NativeImageToImageRequestDto dto;
+
+  @override
+  Map<String, Object?> toPayload() =>
+      const NativeImageToImageRequestBuilder().build(dto);
+}
+
+class _NativeInpaint extends _NativeRequest {
+  const _NativeInpaint(this.dto);
+
+  final NativeInpaintRequestDto dto;
+
+  @override
+  Map<String, Object?> toPayload() =>
+      const NativeInpaintRequestBuilder().build(dto);
 }

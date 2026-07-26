@@ -70,6 +70,16 @@ abstract final class ServiceNames {
 Future<void> configureDependencies() async {
   if (getIt.isRegistered<AppSettingsController>()) return;
 
+  await _registerLocalStorage();
+  await _registerSettings();
+  await _registerHistory();
+  _registerNetwork();
+  _registerApiServices();
+  _registerRepositories();
+  await _registerControllers();
+}
+
+Future<void> _registerLocalStorage() async {
   final sharedPreferences = await SharedPreferences.getInstance();
   getIt.registerSingleton<SharedPreferences>(sharedPreferences);
   getIt.registerLazySingleton<AppPreferences>(() => AppPreferences(getIt()));
@@ -89,7 +99,9 @@ Future<void> configureDependencies() async {
   getIt.registerLazySingleton<SecureCredentialStore>(
     () => FlutterSecureCredentialStore(getIt()),
   );
+}
 
+Future<void> _registerSettings() async {
   getIt.registerLazySingleton<AppSettingsRepository>(
     () => AppSettingsRepositoryImpl(getIt()),
   );
@@ -111,14 +123,18 @@ Future<void> configureDependencies() async {
       initialSettings: llmSettings,
     ),
   );
+}
 
+Future<void> _registerHistory() async {
   getIt.registerLazySingleton(GenerationDatabase.new);
   getIt.registerLazySingleton(GenerationImageStore.new);
   getIt.registerLazySingleton<GenerationHistoryRepository>(
     () => GenerationHistoryRepositoryImpl(getIt()),
   );
   await getIt<GenerationHistoryRepository>().initialize();
+}
 
+void _registerNetwork() {
   getIt.registerLazySingleton<ApiInspector>(ApiInspector.new);
   getIt.registerLazySingleton<Dio>(
     () => DioFactory.createNative()
@@ -156,7 +172,9 @@ Future<void> configureDependencies() async {
       settingsProvider: () => getIt<AppSettingsController>().settings,
     ),
   );
+}
 
+void _registerApiServices() {
   final nativeDio = getIt<Dio>(instanceName: ServiceNames.nativeDio);
   final gatewayDio = getIt<Dio>(instanceName: ServiceNames.gatewayDio);
   getIt.registerLazySingleton(() => BackendConnectionService(getIt()));
@@ -190,7 +208,9 @@ Future<void> configureDependencies() async {
   getIt.registerLazySingleton(() => GatewaySketchService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayColorizeService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayEmotionService(gatewayDio));
+}
 
+void _registerRepositories() {
   getIt.registerLazySingleton<GenerationRepository>(
     () => GenerationRepositoryImpl(
       nativeTextToImageService: getIt(),
@@ -229,6 +249,9 @@ Future<void> configureDependencies() async {
       credentialStore: getIt(),
     ),
   );
+}
+
+Future<void> _registerControllers() async {
   getIt.registerLazySingleton(
     () => GenerationQueue(
       generationRepository: getIt(),

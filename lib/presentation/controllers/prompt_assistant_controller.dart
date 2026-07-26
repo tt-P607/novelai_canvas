@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../core/errors/error_message.dart';
 import '../../data/datasources/local/prompt_chat_preferences.dart';
 import '../../domain/entities/llm_assistant_settings.dart';
 import '../../domain/entities/prompt_assistant.dart';
@@ -189,20 +190,12 @@ class PromptAssistantController extends ChangeNotifier {
           1) {
         await _generateSessionTitle(cancelToken);
       }
-    } on DioException catch (error) {
-      if (!CancelToken.isCancel(error)) {
-        errorMessage = error.toString().replaceFirst(
-          RegExp(r'^\w+Exception: '),
-          '',
-        );
+    } catch (error) {
+      // A user-initiated cancel is not a failure and must not offer a retry.
+      if (!(error is DioException && CancelToken.isCancel(error))) {
+        errorMessage = friendlyErrorMessage(error);
         failedMessage = userMessage;
       }
-    } catch (error) {
-      errorMessage = error.toString().replaceFirst(
-        RegExp(r'^\w+Exception: '),
-        '',
-      );
-      failedMessage = userMessage;
     } finally {
       if (identical(_cancelToken, cancelToken)) _cancelToken = null;
       operationStatus = null;

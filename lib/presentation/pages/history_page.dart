@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 
-import '../widgets/fullscreen_image_preview.dart';
-
+import '../../core/errors/error_message.dart';
 import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/history_controller.dart';
+import '../widgets/compact_snack_bar.dart';
+import '../widgets/fullscreen_image_preview.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({
@@ -188,25 +189,18 @@ class _HistoryPageState extends State<HistoryPage> {
     try {
       await ImageGallerySaverPlus.saveFile(path);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            behavior: SnackBarBehavior.floating,
-            content: Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                SizedBox(width: 10),
-                Text('已保存到系统相册'),
-              ],
-            ),
-          ),
-        );
+      showCompactSnackBar(
+        context,
+        icon: Icons.check_circle_rounded,
+        message: '已保存到系统相册',
+      );
     } catch (error) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
+      showCompactSnackBar(
         context,
-      ).showSnackBar(SnackBar(content: Text('保存失败：$error')));
+        icon: Icons.error_outline_rounded,
+        message: '保存失败：${friendlyErrorMessage(error)}',
+      );
     }
   }
 }

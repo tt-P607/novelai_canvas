@@ -11,6 +11,10 @@ import '../../domain/repositories/prompt_assistant_repository.dart';
 import '../../domain/repositories/secure_credential_store.dart';
 import '../api/danbooru/danbooru_service.dart';
 import '../api/llm/llm_chat_service.dart';
+import 'prompt_assistant_tools.dart';
+
+/// Maximum model round-trips before the agent gives up on a tool workflow.
+const _maxAgentRounds = 6;
 
 class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
   PromptAssistantRepositoryImpl({
@@ -25,93 +29,6 @@ class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
   final DanbooruService _danbooruService;
   final SecureCredentialStore _credentialStore;
 
-  static const _danbooruTools = <Map<String, Object?>>[
-    {
-      'type': 'function',
-      'function': {
-        'name': 'danbooru_search',
-        'description': '根据自然语言、角色、作品、外观、动作或风格搜索真实 Danbooru 标签。',
-        'parameters': {
-          'type': 'object',
-          'properties': {
-            'query': {'type': 'string', 'description': '要检索的关键词或描述'},
-            'limit': {'type': 'integer', 'description': '返回数量，建议 5 到 20'},
-          },
-          'required': ['query'],
-        },
-      },
-    },
-    {
-      'type': 'function',
-      'function': {
-        'name': 'danbooru_related',
-        'description': '根据已经确认的 Danbooru 标签查询相关共现标签。',
-        'parameters': {
-          'type': 'object',
-          'properties': {
-            'tags': {
-              'type': 'array',
-              'items': {'type': 'string'},
-              'description': '已确认的 Danbooru 标签',
-            },
-            'limit': {'type': 'integer', 'description': '返回数量，建议 5 到 20'},
-          },
-          'required': ['tags'],
-        },
-      },
-    },
-  ];
-
-  static const _promptTools = <Map<String, Object?>>[
-    {
-      'type': 'function',
-      'function': {
-        'name': 'submit_prompt_result',
-        'description':
-            '当用户明确要求生成、整理、修改、优化、补全或应用 NovelAI 提示词时，提交全局正负面提示词，以及可选的多人正负面提示词和位置。普通问答、图片分析和创作讨论不要调用。',
-        'parameters': {
-          'type': 'object',
-          'properties': {
-            'positive': {
-              'type': 'string',
-              'description': '英文半角逗号分隔的全局正向 NovelAI 标签',
-            },
-            'negative': {
-              'type': 'string',
-              'description': '英文半角逗号分隔的全局负向 NovelAI 标签',
-            },
-            'characters': {
-              'type': 'array',
-              'description': '多角色提示词；没有独立角色时传空数组，最多 6 个',
-              'items': {
-                'type': 'object',
-                'properties': {
-                  'prompt': {'type': 'string', 'description': '该角色的正向标签'},
-                  'negative_prompt': {
-                    'type': 'string',
-                    'description': '该角色的负向标签',
-                  },
-                  'x': {
-                    'type': 'number',
-                    'description': '角色水平位置，0.1 左、0.5 中、0.9 右',
-                  },
-                  'y': {
-                    'type': 'number',
-                    'description': '角色垂直位置，0.1 上、0.5 中、0.9 下',
-                  },
-                  'enabled': {'type': 'boolean', 'description': '是否启用该角色'},
-                },
-                'required': ['prompt', 'negative_prompt', 'x', 'y', 'enabled'],
-              },
-            },
-            'notes': {'type': 'string', 'description': '用简体中文简要说明已准备的提示词'},
-          },
-          'required': ['positive', 'negative', 'characters', 'notes'],
-        },
-      },
-    },
-  ];
-
   @override
   Future<PromptAssistantReply> chat({
     required List<PromptChatMessage> messages,
@@ -125,159 +42,171 @@ class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
     if (messages.isEmpty) {
       throw const ConfigurationException('请先输入消息或添加图片。');
     }
+    final session = _AgentSession(
+      settings: settings,
+      cancelToken: cancelToken,
+      onStatus: onStatus,
+      onNotice: onNotice,
+    );
     final apiKey =
         await _credentialStore.read(AppConstants.llmCredentialKey) ?? '';
-    final executedToolCalls = <String>{};
-    var danbooruCallCount = 0;
-    var danbooruToolsAvailable = settings.danbooruToolsEnabled;
     final conversation = <Map<String, Object?>>[
-      {'role': 'system', 'content': settings.prompts.agentPrompt},
-      {
-        'role': 'system',
-        'content': jsonEncode({
-          'current_positive': currentPositive,
-          'current_negative': currentNegative,
-          'danbooru_tools_enabled': settings.danbooruToolsEnabled,
-          'instruction': settings.danbooruToolsEnabled
-              ? '普通问答、图片分析和创作讨论直接自然回复。需要核对标签时可以使用 Danbooru 搜索或相关标签工具，并结合返回结果继续回答。只有用户明确要求生成、整理、修改、优化、补全或应用提示词时才调用 submit_prompt_result 工具；该工具只控制全局正负面、多人正负面和人物位置，不得修改其他生成参数。不要在回复正文输出结构化 JSON。'
-              : '普通问答、图片分析和创作讨论直接自然回复。Danbooru 标签查询工具已关闭，不要尝试调用或声称已查询标签。只有用户明确要求生成、整理、修改、优化、补全或应用提示词时才调用 submit_prompt_result 工具；该工具只控制全局正负面、多人正负面和人物位置，不得修改其他生成参数。不要在回复正文输出结构化 JSON。',
-        }),
-      },
+      ..._systemMessages(settings, currentPositive, currentNegative),
       ...await Future.wait(messages.map(_messagePayload)),
     ];
 
-    for (var round = 0; round < 6; round++) {
+    for (var round = 0; round < _maxAgentRounds; round++) {
+      session.throwIfCancelled();
       onStatus?.call(round == 0 ? '正在请求模型…' : '正在等待模型整理结果…');
-      final tools = <Map<String, Object?>>[
-        if (danbooruToolsAvailable) ..._danbooruTools,
-        ..._promptTools,
-      ];
-      if (cancelToken?.isCancelled == true) {
-        throw DioException.requestCancelled(
-          requestOptions: RequestOptions(),
-          reason: '用户已中止请求',
-        );
-      }
       final result = await _llmService.completeWithTools(
         baseUrl: settings.baseUrl,
         apiKey: apiKey,
         model: settings.model,
         messages: conversation,
-        tools: tools,
+        tools: session.availableTools,
         cancelToken: cancelToken,
       );
-      if (result.reasoningContent.isNotEmpty) {
-        onStatus?.call('模型正在思考…');
-      }
-      if (result.toolCalls.isEmpty) {
-        final promptResult = _promptResultFromContent(result.content);
-        return PromptAssistantReply(
-          message: promptResult == null
-              ? result.content.trim()
-              : promptResult.notes.isNotEmpty
-              ? promptResult.notes
-              : '提示词已写好。',
-          promptResult: promptResult,
-        );
-      }
-      conversation.add({
-        'role': 'assistant',
-        'content': result.content.isEmpty ? null : result.content,
-        'tool_calls': result.toolCalls
-            .map(
-              (call) => {
-                'id': call.id,
-                'type': 'function',
-                'function': {
-                  'name': call.name,
-                  'arguments': jsonEncode(call.arguments),
-                },
-              },
-            )
-            .toList(),
-      });
-      for (final call in result.toolCalls) {
-        if (cancelToken?.isCancelled == true) {
-          throw DioException.requestCancelled(
-            requestOptions: RequestOptions(),
-            reason: '用户已中止请求',
-          );
-        }
-        final signature = '${call.name}:${jsonEncode(call.arguments)}';
-        if (!executedToolCalls.add(signature)) {
-          conversation.add({
-            'role': 'tool',
-            'tool_call_id': call.id,
-            'name': call.name,
-            'content': jsonEncode({
-              'error': '相同参数的工具调用已经执行过，请直接使用已有结果回答，不要重复调用。',
-            }),
-          });
-          continue;
-        }
-        if (call.name == 'danbooru_search' || call.name == 'danbooru_related') {
-          if (danbooruCallCount >= 1) {
-            conversation.add({
-              'role': 'tool',
-              'tool_call_id': call.id,
-              'name': call.name,
-              'content': jsonEncode({
-                'error': '本次回复已经完成过标签查询。禁止继续搜索，请立即使用已有结果回答。',
-              }),
-            });
-            continue;
-          }
-          danbooruCallCount = 1;
-          danbooruToolsAvailable = false;
-          final notice = call.name == 'danbooru_search'
-              ? '提示词助手调用了标签搜索'
-              : '提示词助手调用了相关标签查询';
-          onNotice?.call(notice);
-          onStatus?.call(
-            call.name == 'danbooru_search' ? '正在搜索标签…' : '正在查询相关标签…',
-          );
-        }
-        if (call.name == 'submit_prompt_result') {
-          onNotice?.call('提示词助手正在整理提示词');
-          onStatus?.call('正在整理提示词…');
-        }
-        final toolResult = await _executeTool(call, settings);
-        if (call.name == 'submit_prompt_result' && toolResult is Map) {
-          final resultJson = toolResult['prompt_result'];
-          if (resultJson is Map) {
-            final promptResult = PromptAssistantResult.fromJson(
-              Map<String, Object?>.from(resultJson),
-            );
-            return PromptAssistantReply(
-              message: result.content.trim().isNotEmpty
-                  ? result.content.trim()
-                  : promptResult.notes.isNotEmpty
-                  ? promptResult.notes
-                  : '提示词已写好。',
-              promptResult: promptResult,
-            );
-          }
-        }
-        conversation.add({
-          'role': 'tool',
-          'tool_call_id': call.id,
-          'name': call.name,
-          'content': jsonEncode(toolResult),
-        });
-        if (call.name == 'danbooru_search' || call.name == 'danbooru_related') {
-          conversation.add({
-            'role': 'system',
-            'content':
-                '已获得本轮标签查询结果。请结合这些结果继续完成当前回答；若用户要求提示词，可以调用 submit_prompt_result。',
-          });
-        }
-      }
+      if (result.reasoningContent.isNotEmpty) onStatus?.call('模型正在思考…');
+
+      if (result.toolCalls.isEmpty) return _plainReply(result.content);
+
+      conversation.add(_assistantToolCallMessage(result));
+      final reply = await _runToolCalls(
+        calls: result.toolCalls,
+        assistantContent: result.content,
+        conversation: conversation,
+        session: session,
+      );
+      if (reply != null) return reply;
     }
     return const PromptAssistantReply(
       message: '模型未能完成本次工具流程，请关闭标签查询工具后重试，或换用支持 OpenAI Tool Calling 的模型。',
     );
   }
 
+  /// Executes every tool call of one round, appending results to the
+  /// conversation. Returns a reply as soon as the model submits a final prompt.
+  Future<PromptAssistantReply?> _runToolCalls({
+    required List<LlmToolCall> calls,
+    required String assistantContent,
+    required List<Map<String, Object?>> conversation,
+    required _AgentSession session,
+  }) async {
+    for (final call in calls) {
+      session.throwIfCancelled();
+
+      final rejection = session.rejectionFor(call);
+      if (rejection != null) {
+        conversation.add(_toolMessage(call, {'error': rejection}));
+        continue;
+      }
+
+      session.announce(call);
+      final toolResult = await _executeTool(call, session.settings);
+
+      final promptResult = _extractPromptResult(call, toolResult);
+      if (promptResult != null) {
+        return PromptAssistantReply(
+          message: _replyMessage(assistantContent, promptResult),
+          promptResult: promptResult,
+        );
+      }
+
+      conversation.add(_toolMessage(call, toolResult));
+      if (PromptAssistantTools.danbooruToolNames.contains(call.name)) {
+        conversation.add({
+          'role': 'system',
+          'content':
+              '已获得本轮标签查询结果。请结合这些结果继续完成当前回答；'
+              '若用户要求提示词，可以调用 submit_prompt_result。',
+        });
+      }
+    }
+    return null;
+  }
+
+  List<Map<String, Object?>> _systemMessages(
+    LlmAssistantSettings settings,
+    String currentPositive,
+    String currentNegative,
+  ) => [
+    {'role': 'system', 'content': settings.prompts.agentPrompt},
+    {
+      'role': 'system',
+      'content': jsonEncode({
+        'current_positive': currentPositive,
+        'current_negative': currentNegative,
+        'danbooru_tools_enabled': settings.danbooruToolsEnabled,
+        'instruction': _instruction(settings.danbooruToolsEnabled),
+      }),
+    },
+  ];
+
+  String _instruction(bool danbooruEnabled) {
+    const shared =
+        '只有用户明确要求生成、整理、修改、优化、补全或应用提示词时才调用 submit_prompt_result 工具；'
+        '该工具只控制全局正负面、多人正负面和人物位置，不得修改其他生成参数。不要在回复正文输出结构化 JSON。';
+    final tools = danbooruEnabled
+        ? '需要核对标签时可以使用 Danbooru 搜索或相关标签工具，并结合返回结果继续回答。'
+        : 'Danbooru 标签查询工具已关闭，不要尝试调用或声称已查询标签。';
+    return '普通问答、图片分析和创作讨论直接自然回复。$tools$shared';
+  }
+
+  PromptAssistantReply _plainReply(String content) {
+    final promptResult = _promptResultFromContent(content);
+    return PromptAssistantReply(
+      message: promptResult == null
+          ? content.trim()
+          : _replyMessage('', promptResult),
+      promptResult: promptResult,
+    );
+  }
+
+  String _replyMessage(String assistantContent, PromptAssistantResult result) {
+    final content = assistantContent.trim();
+    if (content.isNotEmpty) return content;
+    return result.notes.isNotEmpty ? result.notes : '提示词已写好。';
+  }
+
+  PromptAssistantResult? _extractPromptResult(
+    LlmToolCall call,
+    Object? toolResult,
+  ) {
+    if (call.name != PromptAssistantTools.submitPromptResult) return null;
+    if (toolResult is! Map) return null;
+    final resultJson = toolResult['prompt_result'];
+    if (resultJson is! Map) return null;
+    return PromptAssistantResult.fromJson(
+      Map<String, Object?>.from(resultJson),
+    );
+  }
+
+  Map<String, Object?> _assistantToolCallMessage(LlmChatResult result) => {
+    'role': 'assistant',
+    'content': result.content.isEmpty ? null : result.content,
+    'tool_calls': result.toolCalls
+        .map(
+          (call) => {
+            'id': call.id,
+            'type': 'function',
+            'function': {
+              'name': call.name,
+              'arguments': jsonEncode(call.arguments),
+            },
+          },
+        )
+        .toList(),
+  };
+
+  Map<String, Object?> _toolMessage(LlmToolCall call, Object? content) => {
+    'role': 'tool',
+    'tool_call_id': call.id,
+    'name': call.name,
+    'content': jsonEncode(content),
+  };
+
+  /// Some models wrap the result in prose instead of calling the tool; accept a
+  /// trailing JSON object as long as it carries the required `positive` field.
   PromptAssistantResult? _promptResultFromContent(String content) {
     final start = content.indexOf('{');
     final end = content.lastIndexOf('}');
@@ -299,8 +228,7 @@ class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
       return {'role': message.role.name, 'content': message.content};
     }
     final bytes = await File(imagePath).readAsBytes();
-    final extension = imagePath.split('.').last.toLowerCase();
-    final mime = switch (extension) {
+    final mime = switch (imagePath.split('.').last.toLowerCase()) {
       'png' => 'image/png',
       'webp' => 'image/webp',
       _ => 'image/jpeg',
@@ -326,7 +254,7 @@ class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
     LlmToolCall call,
     LlmAssistantSettings settings,
   ) async {
-    if (call.name == 'submit_prompt_result') {
+    if (call.name == PromptAssistantTools.submitPromptResult) {
       final promptResult = PromptAssistantResult.fromJson(call.arguments);
       if (promptResult.positive.trim().isEmpty) {
         return {'error': 'positive 不能为空'};
@@ -337,8 +265,7 @@ class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
         'instruction': '结果已交给应用处理。请用自然语言简短告知用户已准备好，可确认填入。',
       };
     }
-    if (!settings.danbooruToolsEnabled &&
-        (call.name == 'danbooru_search' || call.name == 'danbooru_related')) {
+    if (!settings.danbooruToolsEnabled) {
       return {'error': 'Danbooru 标签查询工具已关闭'};
     }
     final limit = _limit(call.arguments['limit']);
@@ -390,4 +317,63 @@ class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
     'wiki': tag.wiki,
     'sources': tag.sources,
   };
+}
+
+/// Tracks per-conversation tool state: duplicate calls and repeated tag lookups
+/// are rejected at runtime so the schema descriptions can stay neutral.
+class _AgentSession {
+  _AgentSession({
+    required this.settings,
+    required this.cancelToken,
+    required this.onStatus,
+    required this.onNotice,
+  }) : _danbooruAvailable = settings.danbooruToolsEnabled;
+
+  final LlmAssistantSettings settings;
+  final CancelToken? cancelToken;
+  final void Function(String status)? onStatus;
+  final void Function(String notice)? onNotice;
+
+  final Set<String> _executedSignatures = {};
+  bool _danbooruAvailable;
+
+  List<Map<String, Object?>> get availableTools => [
+    if (_danbooruAvailable) ...PromptAssistantTools.danbooru,
+    ...PromptAssistantTools.prompt,
+  ];
+
+  void throwIfCancelled() {
+    if (cancelToken?.isCancelled != true) return;
+    throw DioException.requestCancelled(
+      requestOptions: RequestOptions(),
+      reason: '用户已中止请求',
+    );
+  }
+
+  /// Returns an error message when the call must not run, or null to proceed.
+  String? rejectionFor(LlmToolCall call) {
+    final signature = '${call.name}:${jsonEncode(call.arguments)}';
+    if (!_executedSignatures.add(signature)) {
+      return '相同参数的工具调用已经执行过，请直接使用已有结果回答，不要重复调用。';
+    }
+    if (PromptAssistantTools.danbooruToolNames.contains(call.name) &&
+        !_danbooruAvailable) {
+      return '本次回复已经完成过标签查询。禁止继续搜索，请立即使用已有结果回答。';
+    }
+    return null;
+  }
+
+  void announce(LlmToolCall call) {
+    if (PromptAssistantTools.danbooruToolNames.contains(call.name)) {
+      _danbooruAvailable = false;
+      final isSearch = call.name == 'danbooru_search';
+      onNotice?.call(isSearch ? '提示词助手调用了标签搜索' : '提示词助手调用了相关标签查询');
+      onStatus?.call(isSearch ? '正在搜索标签…' : '正在查询相关标签…');
+      return;
+    }
+    if (call.name == PromptAssistantTools.submitPromptResult) {
+      onNotice?.call('提示词助手正在整理提示词');
+      onStatus?.call('正在整理提示词…');
+    }
+  }
 }
