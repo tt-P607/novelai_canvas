@@ -97,6 +97,29 @@ void main() {
     }
   });
 
+  test('两个地址都失败时，错误消息列出尝试过的主机', () async {
+    final adapter = _ScriptedAdapter([
+      _RawReply(
+        200,
+        'Please refresh NovelAI.net. If using a third-party tool, '
+        'update to the image URL.',
+      ),
+      _Reply(500, {'message': 'boom'}),
+    ]);
+    final service = NativeSubscriptionService(_client(adapter));
+
+    await expectLater(
+      service.getSubscription(),
+      throwsA(
+        isA<Exception>().having(
+          (error) => error.toString(),
+          'message',
+          allOf(contains('gateway.example.com'), contains('api.novelai.net')),
+        ),
+      ),
+    );
+  });
+
   test('网关能正常返回订阅时不发起第二次请求', () async {
     final adapter = _ScriptedAdapter([
       _Reply(200, {'tier': 1, 'active': true}),
