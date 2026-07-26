@@ -125,12 +125,7 @@ void main() {
     dio.httpClientAdapter = adapter;
 
     // upscale 和 generate-voice 形似图像端点，实际由账户域名提供。
-    const accountPaths = [
-      '/user/data',
-      '/user/subscription',
-      '/ai/upscale',
-      '/ai/generate-voice',
-    ];
+    const accountPaths = ['/ai/upscale', '/ai/generate-voice'];
     for (final path in accountPaths) {
       await dio.post<Object?>(path);
       expect(
@@ -140,7 +135,11 @@ void main() {
       );
     }
 
+    // 账户读取已迁到 image 域名：api 域名对带凭据的 /user/* 返回
+    // "update to the image URL" 提示。
     const imagePaths = [
+      '/user/data',
+      '/user/subscription',
       '/ai/generate-image',
       '/ai/generate-image-stream',
       '/ai/augment-image',

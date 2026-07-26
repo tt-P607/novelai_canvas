@@ -17,12 +17,11 @@ class NativeEndpointInterceptor extends Interceptor {
   /// Paths served by api.novelai.net. `/ai/upscale` and `/ai/generate-voice`
   /// look like image endpoints but live on the account host, so they must be
   /// matched before any generic `/ai/` handling.
-  static const _accountPaths = <String>{
-    '/user/data',
-    '/user/subscription',
-    '/ai/upscale',
-    '/ai/generate-voice',
-  };
+  ///
+  /// `/user/*` deliberately stays on image.novelai.net: authenticated requests
+  /// to api.novelai.net now answer with the "update to the image URL" notice,
+  /// and the working novelai-sdk reads the subscription from the image host.
+  static const _accountPaths = <String>{'/ai/upscale', '/ai/generate-voice'};
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {

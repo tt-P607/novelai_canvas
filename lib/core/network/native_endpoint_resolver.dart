@@ -23,14 +23,13 @@ abstract final class NativeEndpointResolver {
     return _withGatewayPrefix(endpoint);
   }
 
-  /// Account endpoints live on api.novelai.net while generation lives on
-  /// image.novelai.net.
+  /// Official fallback for `/user/*` reads.
   ///
-  /// A gateway is expected to route `/user/*` (plus `/ai/upscale` and
-  /// `/ai/generate-voice`) to the account host. When it instead lets those
-  /// paths reach the image host or a site catch-all, NovelAI replies with a
-  /// 404 or its "update to the image URL" notice, and callers retry here.
-  static String officialAccountBaseUrl() => AppConstants.nativeUserBaseUrl;
+  /// NovelAI moved authenticated account reads to image.novelai.net; requests
+  /// that end up on api.novelai.net or a site catch-all answer with the
+  /// "update to the image URL" notice. When the configured endpoint returns
+  /// that notice, callers retry against the official image host directly.
+  static String officialAccountBaseUrl() => AppConstants.nativeBaseUrl;
 
   /// Official defaults retain NovelAI's required host split. Any other URL is
   /// treated as the native-format gateway documented by novelai-gateway, whose

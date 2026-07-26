@@ -15,7 +15,7 @@ const _gatewaySettings = AppSettings(
 );
 
 void main() {
-  test('网关只代理图片域名时，订阅查询回退到官方账户域名', () async {
+  test('自定义端点返回错误主机提示时，订阅查询回退到官方图片域名', () async {
     final adapter = _ScriptedAdapter([
       // NovelAI answers with 200 and a notice rather than an error status.
       _Reply(200, {
@@ -37,7 +37,7 @@ void main() {
     );
     expect(
       adapter.requestedUrls.last,
-      '${AppConstants.nativeUserBaseUrl}/user/subscription',
+      '${AppConstants.nativeBaseUrl}/user/subscription',
     );
   });
 
@@ -114,7 +114,7 @@ void main() {
         isA<Exception>().having(
           (error) => error.toString(),
           'message',
-          allOf(contains('gateway.example.com'), contains('api.novelai.net')),
+          allOf(contains('gateway.example.com'), contains('image.novelai.net')),
         ),
       ),
     );
