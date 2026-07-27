@@ -59,8 +59,6 @@ class GenerationController extends ChangeNotifier {
         if (!recentImages.contains(task.imagePath)) {
           recentImages.insert(0, task.imagePath!);
         }
-        // Mark as unviewed so the strip highlights it until the user taps it.
-        unviewedImages.add(task.imagePath!);
         // Auto-follow the latest result only when the user is already viewing
         // the most recent image (or nothing yet). If they browsed back to an
         // older one, leave them there — the new one lights up as unread.
@@ -68,7 +66,12 @@ class GenerationController extends ChangeNotifier {
             selectedRecentImage == null ||
             selectedRecentImage == latestImagePath;
         if (followingLatest) {
+          // The user is already looking at this slot, so the new result is
+          // viewed immediately — no unread badge needed.
           selectedRecentImage = task.imagePath;
+        } else {
+          // The user is browsing an older image — mark the new one unread.
+          unviewedImages.add(task.imagePath!);
         }
       }
       notifyListeners();
@@ -126,10 +129,10 @@ class GenerationController extends ChangeNotifier {
   /// entry, marking it read.
   final Set<String> unviewedImages = {};
 
-  /// How many tasks are currently queued or running. Drives the grey
-  /// placeholder tiles with a spinner at the front of the strip.
+  /// Whether any task is currently queued or running. Since generation is
+  /// strictly serial, only one placeholder tile is ever shown at a time.
   int get generatingSlots =>
-      queueState.pendingCount + (queueState.isRunning ? 1 : 0);
+      (queueState.pendingCount > 0 || queueState.isRunning) ? 1 : 0;
 
   /// Opus is subscription tier 3; only it grants the free low-cost sample.
   bool isOpus = false;

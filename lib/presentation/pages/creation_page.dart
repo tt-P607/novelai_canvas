@@ -165,19 +165,30 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
+  /// Whether the stream preview should take over the workbench. It only shows
+  /// when the user is following the latest image — otherwise the preview would
+  /// override their selection every time a new step arrives.
+  bool get _shouldShowPreview {
+    final selected = controller.selectedRecentImage;
+    if (selected == null) return true;
+    return selected == controller.latestImagePath;
+  }
+
   /// Section order follows the task flow: pick the mode first, feed it inputs
   /// (source image and mask sit directly below the mode switch so inpainting
   /// never requires scrolling), then prompts, then advanced parameters.
   List<Widget> _sections() => [
     _modeSelector(),
     const SizedBox(height: 14),
-    // The workbench only shows completed images the user selected from the
-    // strip. Streaming previews render inside the strip's generating tile so
-    // a batch run never yanks the user back to the latest frame.
+    // The workbench shows the stream preview only when the user is following
+    // the latest result. If they browsed to an older image, the workbench
+    // stays on their selection and the preview only shows in the strip tile.
     GenerationResultPanel(
-      previewBytes: null,
-      previewStep: null,
-      totalSteps: 0,
+      previewBytes: _shouldShowPreview
+          ? controller.queueState.previewImageBytes
+          : null,
+      previewStep: controller.queueState.previewStep,
+      totalSteps: controller.queueState.activeTask?.spec.steps ?? 0,
       completedImagePath:
           controller.selectedRecentImage ?? controller.latestImagePath,
       onSendToImageTools: widget.onOpenImageTools,
@@ -575,38 +586,58 @@ class _CreationPageState extends State<CreationPage> {
             child: GestureDetector(
               onTap: () => controller.selectRecentImage(path),
               onLongPress: () => controller.removeRecentImage(path),
-              child: Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isSelected
-                        ? colors.primary.withValues(alpha: 0.9)
-                        : colors.outlineVariant.withValues(alpha: 0.3),
-                    width: isSelected ? 2.5 : 1,
+              child: Stack(
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected
+                            ? colors.primary.withValues(alpha: 0.9)
+                            : isUnviewed
+                            ? colors.tertiary.withValues(alpha: 0.8)
+                            : colors.outlineVariant.withValues(alpha: 0.3),
+                        width: isSelected || isUnviewed ? 2.5 : 1,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(path),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      ),
+                    ),
                   ),
-                  // Unread items glow from the bottom edge so new results
-                  // stand out without overlaying the image itself.
-                  boxShadow: isUnviewed && !isSelected
-                      ? [
-                          BoxShadow(
-                            color: colors.tertiary.withValues(alpha: 0.7),
-                            blurRadius: 10,
-                            spreadRadius: 1.5,
-                            offset: const Offset(0, 5),
+                  // Unread dot badge in the top-right corner — bright and
+                  // impossible to miss, like a notification indicator.
+                  if (isUnviewed && !isSelected)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: colors.tertiary,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: colors.onSurface.withValues(alpha: 0.5),
+                            width: 1.5,
                           ),
-                        ]
-                      : null,
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.file(
-                    File(path),
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                  ),
-                ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colors.tertiary.withValues(alpha: 0.8),
+                              blurRadius: 6,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           );
