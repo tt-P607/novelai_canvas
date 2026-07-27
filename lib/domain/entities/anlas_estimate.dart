@@ -40,6 +40,7 @@ AnlasEstimate estimateAnlas({
   bool hasMask = false,
   int characterReferenceCount = 0,
   int vibeReferenceCount = 0,
+  int uncachedVibeCount = 0,
 }) {
   final area = width * height;
   final base =
@@ -57,8 +58,13 @@ AnlasEstimate estimateAnlas({
       ? math.max(sampleCount - 1, 0)
       : sampleCount;
 
+  final characterRefAnlas = 5 * characterReferenceCount * sampleCount;
+  final vibeEncodingAnlas = 2 * uncachedVibeCount;
+  final vibeExtraAnlas =
+      2 * (vibeReferenceCount > 4 ? vibeReferenceCount - 4 : 0);
+
   final referenceSurcharge =
-      (5 * characterReferenceCount + 5 * vibeReferenceCount) * sampleCount;
+      characterRefAnlas + vibeEncodingAnlas + vibeExtraAnlas;
 
   return AnlasEstimate(
     total: perImage * billableSamples + referenceSurcharge,

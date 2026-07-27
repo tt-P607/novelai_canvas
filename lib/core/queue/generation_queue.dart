@@ -64,6 +64,11 @@ class GenerationQueue {
   final Future<void> Function(bool enabled) _wakeLockSetter;
   final Queue<String> _pendingIds = Queue<String>();
   final Set<String> _knownIds = {};
+  // In-memory task cache so vibe encodings and source images embedded in
+  // imported files are not lost between enqueue and execution. The persisted
+  // snapshot intentionally strips large base64 payloads; without this cache a
+  // task read back from SQLite right after enqueue would be missing them.
+  final Map<String, GenerationTask> _memoryTasks = {};
   final StreamController<GenerationQueueState> _stateController =
       StreamController<GenerationQueueState>.broadcast();
   final StreamController<GenerationTask> _taskController =
@@ -114,6 +119,10 @@ class GenerationQueue {
       updatedAt: DateTime.now().toUtc(),
       clearError: true,
     );
+    // Keep the full in-memory task so vibe encodings and embedded source
+    // images survive the enqueue → execute hop without being re-read from
+    // the SQLite snapshot (which strips large base64 payloads).
+    _memoryTasks[queued.id] = queued;
     final existing = await _historyRepository.find(queued.id);
     if (existing == null) {
       await _historyRepository.save(queued);
@@ -133,6 +142,7 @@ class GenerationQueue {
     }
     _pendingIds.remove(taskId);
     _knownIds.remove(taskId);
+    _memoryTasks.remove(taskId);
     final task = await _historyRepository.find(taskId);
     if (task != null && !task.isTerminal) {
       final cancelled = task.copyWith(
@@ -142,6 +152,28 @@ class GenerationQueue {
       );
       await _historyRepository.update(cancelled);
       _taskController.add(cancelled);
+    }
+    _emitState();
+  }
+
+  /// Cancels every queued (not-yet-running) task in one pass. The active task
+  /// is left untouched so an in-flight request is not interrupted.
+  Future<void> cancelPending() async {
+    final ids = _pendingIds.toList();
+    _pendingIds.clear();
+    _knownIds.clear();
+    for (final id in ids) {
+      _memoryTasks.remove(id);
+      final task = await _historyRepository.find(id);
+      if (task != null && !task.isTerminal) {
+        final cancelled = task.copyWith(
+          status: GenerationTaskStatus.cancelled,
+          updatedAt: DateTime.now().toUtc(),
+          errorMessage: '用户取消了排队任务。',
+        );
+        await _historyRepository.update(cancelled);
+        _taskController.add(cancelled);
+      }
     }
     _emitState();
   }
@@ -166,7 +198,10 @@ class GenerationQueue {
         await _waitForCooldown();
         final taskId = _pendingIds.removeFirst();
         _knownIds.remove(taskId);
-        final persisted = await _historyRepository.find(taskId);
+        // Prefer the in-memory task (carries full vibe encodings); fall back
+        // to the SQLite snapshot only when the app was restarted mid-queue.
+        final memory = _memoryTasks.remove(taskId);
+        final persisted = memory ?? await _historyRepository.find(taskId);
         if (persisted == null ||
             persisted.status == GenerationTaskStatus.cancelled) {
           continue;
@@ -325,6 +360,7 @@ class GenerationQueue {
     _disposed = true;
     final active = _activeTask;
     if (active != null) await _generationRepository.cancel(active.id);
+    _memoryTasks.clear();
     _setWakeLockBestEffort(false);
     await _stateController.close();
     await _taskController.close();

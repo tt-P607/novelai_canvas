@@ -32,14 +32,39 @@ class _PromptAssistantPageState extends State<PromptAssistantPage> {
   final _input = TextEditingController();
   final _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
+  int _lastMessageCount = 0;
 
   PromptAssistantController get controller => widget.controller;
 
   @override
+  void initState() {
+    super.initState();
+    _lastMessageCount = controller.messages.length;
+    // Auto-scroll when new messages arrive during streaming so the latest
+    // content is always visible without the user having to drag manually.
+    controller.addListener(_onControllerChanged);
+  }
+
+  @override
   void dispose() {
+    controller.removeListener(_onControllerChanged);
     _input.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onControllerChanged() {
+    final count = controller.messages.length;
+    if (count <= _lastMessageCount) return;
+    _lastMessageCount = count;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   @override

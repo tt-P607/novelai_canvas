@@ -192,10 +192,15 @@ class NativeGenerationParametersDto {
           )
           .toList(),
       'director_reference_strength_values': directorReferences
-          .map((reference) => reference.strength)
+          .map(
+            (reference) => double.parse(reference.strength.toStringAsFixed(2)),
+          )
           .toList(),
       'director_reference_secondary_strength_values': directorReferences
-          .map((reference) => 1 - reference.fidelity)
+          .map(
+            (reference) =>
+                double.parse((1 - reference.fidelity).toStringAsFixed(2)),
+          )
           .toList(),
       'director_reference_information_extracted': directorReferences
           .map((reference) => reference.informationExtracted)

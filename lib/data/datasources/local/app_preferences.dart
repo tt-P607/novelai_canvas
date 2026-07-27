@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/app_constants.dart';
@@ -72,4 +74,22 @@ class AppPreferences {
       checkedAt.millisecondsSinceEpoch,
     );
   }
+
+  /// Persisted generation parameters so the creation page survives a cold
+  /// start. Stored as a single JSON blob to keep the preference namespace
+  /// small and writes atomic. Vibe/character references are intentionally
+  /// excluded — they carry large base64 payloads and are re-added by the user.
+  static const _generationParamsKey = 'generation_params';
+
+  Map<String, Object?> get generationParams {
+    final raw = _preferences.getString(_generationParamsKey);
+    if (raw == null || raw.isEmpty) return const {};
+    final decoded = jsonDecode(raw);
+    return decoded is Map
+        ? decoded.map((k, v) => MapEntry(k.toString(), v))
+        : const {};
+  }
+
+  Future<void> setGenerationParams(Map<String, Object?> params) =>
+      _preferences.setString(_generationParamsKey, jsonEncode(params));
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/entities/generation_task.dart';
+import '../../domain/entities/model_info.dart';
 import '../controllers/generation_controller.dart';
 import 'canvas_size_field.dart';
 import 'glass/liquid_glass.dart';
@@ -34,6 +35,7 @@ class GenerationParameterCard extends StatefulWidget {
     required this.seedController,
     required this.widthController,
     required this.heightController,
+    this.availableModels = const [],
   });
 
   final GenerationController controller;
@@ -41,6 +43,10 @@ class GenerationParameterCard extends StatefulWidget {
   final TextEditingController seedController;
   final TextEditingController widthController;
   final TextEditingController heightController;
+
+  /// Models fetched from the gateway's /v1/models endpoint. When empty
+  /// (native mode or before probe), the built-in catalogue is used.
+  final List<ModelInfo> availableModels;
 
   @override
   State<GenerationParameterCard> createState() =>
@@ -115,14 +121,7 @@ class _GenerationParameterCardState extends State<GenerationParameterCard> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextField(
-          controller: widget.modelController,
-          onChanged: controller.updateModel,
-          decoration: const InputDecoration(
-            labelText: '模型',
-            border: OutlineInputBorder(),
-          ),
-        ),
+        _modelSelector(),
         const SizedBox(height: 14),
         CanvasSizeField(
           width: controller.width,
@@ -158,7 +157,7 @@ class _GenerationParameterCardState extends State<GenerationParameterCard> {
             Expanded(child: _seedField()),
             const SizedBox(width: 12),
             Expanded(
-              child: _dropdown(
+              child: _optionPicker(
                 label: '采样器',
                 value: controller.sampler,
                 options: _samplers,
@@ -231,7 +230,7 @@ class _GenerationParameterCardState extends State<GenerationParameterCard> {
               onChanged: controller.updateCfgRescale,
             ),
             const SizedBox(height: 4),
-            _dropdown(
+            _optionPicker(
               label: '噪声调度',
               value: controller.noiseSchedule,
               options: _noiseSchedules,
@@ -257,6 +256,226 @@ class _GenerationParameterCardState extends State<GenerationParameterCard> {
       ),
     ],
   );
+
+  Widget _modelSelector() {
+    final models = widget.availableModels.isNotEmpty
+        ? widget.availableModels
+        : BuiltInModels.all;
+    final currentId = controller.model;
+    final current = models.firstWhere(
+      (model) => model.id == currentId,
+      orElse: () => models.isNotEmpty
+          ? models.first
+          : ModelInfo(id: currentId, name: currentId),
+    );
+    final isV45 = current.id.contains('4-5');
+    final colors = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('模型', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 8),
+        Material(
+          color: colors.primaryContainer.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _showModelSheet(models),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colors.primary.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isV45 ? Icons.auto_awesome_rounded : Icons.image_rounded,
+                    size: 20,
+                    color: colors.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          current.displayName,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        if (current.description.isNotEmpty)
+                          Text(
+                            current.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: colors.onSurfaceVariant),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.unfold_more_rounded,
+                    size: 18,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Official-style model picker: a bottom sheet listing all models so the
+  /// collapsed card stays compact and switching is a single deliberate tap.
+  /// Uses rounded cards matching the app's glass aesthetic instead of bare
+  /// ListTile rows on a black background.
+  void _showModelSheet(List<ModelInfo> models) {
+    final colors = Theme.of(context).colorScheme;
+    final currentId = controller.model;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: colors.surface,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 4),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.onSurfaceVariant.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+              child: Row(
+                children: [
+                  Text(
+                    '选择模型',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                itemCount: models.length,
+                itemBuilder: (listContext, index) {
+                  final model = models[index];
+                  final isSelected = model.id == currentId;
+                  final isV45 = model.id.contains('4-5');
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: isSelected
+                          ? colors.primaryContainer.withValues(alpha: 0.5)
+                          : colors.surfaceContainerHighest.withValues(
+                              alpha: 0.4,
+                            ),
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () {
+                          controller.updateModel(model.id);
+                          widget.modelController.text = model.id;
+                          Navigator.pop(sheetContext);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? colors.primary.withValues(alpha: 0.6)
+                                  : colors.outlineVariant.withValues(
+                                      alpha: 0.3,
+                                    ),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isV45
+                                    ? Icons.auto_awesome_rounded
+                                    : Icons.image_rounded,
+                                size: 22,
+                                color: isSelected
+                                    ? colors.primary
+                                    : colors.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      model.displayName,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: isSelected
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                            color: isSelected
+                                                ? colors.onPrimaryContainer
+                                                : colors.onSurface,
+                                          ),
+                                    ),
+                                    if (model.description.isNotEmpty)
+                                      Text(
+                                        model.description,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: colors.onSurfaceVariant,
+                                            ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              if (isSelected)
+                                Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 22,
+                                  color: colors.primary,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _slider({
     required String label,
@@ -292,25 +511,167 @@ class _GenerationParameterCardState extends State<GenerationParameterCard> {
     ],
   );
 
-  Widget _dropdown({
+  Widget _optionPicker({
     required String label,
     required String value,
     required Map<String, String> options,
     required ValueChanged<String> onChanged,
-  }) => DropdownButtonFormField<String>(
-    isExpanded: true,
-    initialValue: options.containsKey(value) ? value : options.keys.first,
-    decoration: InputDecoration(labelText: label, isDense: true),
-    items: options.entries
-        .map(
-          (entry) =>
-              DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-        )
-        .toList(),
-    onChanged: (selected) {
-      if (selected != null) onChanged(selected);
-    },
-  );
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    final displayValue = options[value] ?? value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 6),
+        Material(
+          color: colors.surfaceContainerHighest.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _showOptionSheet(label, value, options, onChanged),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colors.outlineVariant.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      displayValue,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                  Icon(
+                    Icons.unfold_more_rounded,
+                    size: 18,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showOptionSheet(
+    String title,
+    String currentValue,
+    Map<String, String> options,
+    ValueChanged<String> onChanged,
+  ) {
+    final colors = Theme.of(context).colorScheme;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: colors.surface,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 4),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.onSurfaceVariant.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+              child: Row(
+                children: [
+                  Text(
+                    '选择$title',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                itemCount: options.length,
+                itemBuilder: (listContext, index) {
+                  final entry = options.entries.elementAt(index);
+                  final isSelected = entry.key == currentValue;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: isSelected
+                          ? colors.primaryContainer.withValues(alpha: 0.5)
+                          : colors.surfaceContainerHighest.withValues(
+                              alpha: 0.4,
+                            ),
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () {
+                          onChanged(entry.key);
+                          Navigator.pop(sheetContext);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? colors.primary.withValues(alpha: 0.6)
+                                  : colors.outlineVariant.withValues(
+                                      alpha: 0.3,
+                                    ),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  entry.value,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
+                                        fontWeight: isSelected
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                        color: isSelected
+                                            ? colors.onPrimaryContainer
+                                            : colors.onSurface,
+                                      ),
+                                ),
+                              ),
+                              if (isSelected)
+                                Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 22,
+                                  color: colors.primary,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _seedField() => TextField(
     controller: widget.seedController,

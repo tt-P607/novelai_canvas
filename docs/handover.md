@@ -18,11 +18,11 @@
 
 当前验证结果：
 
-- `dart format --output=none --set-exit-if-changed lib test`：通过。
+- `dart format lib test`：通过。
 - `flutter analyze`：通过，无问题。
-- `flutter test`：28 项全部通过。
-- Android Release APK：构建成功，约 55.6 MB。
-- APK SHA-256：`12bdb5239764bb6cdbc34e8d6fd7145756cd42d1ac58e56e685006cd3642ddb1`。
+- `flutter test`：71 项全部通过。
+- Android Release APK：构建成功，约 57.0 MB（v1.9.0+25）。
+- APK SHA-256：`6951f82cb789321be5836f5313ff0b782204a086eac24e024040fe42c463b614`。
 - iOS IPA：Codemagic 构建配置已完成，但尚未在 macOS Runner 实际验证。
 
 ## 2. 重要目录与入口
@@ -180,14 +180,16 @@ flutter build apk --release
 
 ## 9. 当前产物
 
-最新 Android Release APK 已复制到便于取用的位置：
+最新 Android Release APK 已复制到固定交付目录：
 
-- 工作区路径：`novelai_canvas/release/NovelAICanvas-android.apk`
-- Windows 绝对路径：`E:\novelai_iOS\novelai_canvas\release\NovelAICanvas-android.apk`
+- 版本：`1.8.1+23`
+- 固定路径：`novelai_canvas/release/app-release.apk`
+- 归档路径：`novelai_canvas/release/NovelAI-Canvas-v1.8.1-build23.apk`
 - Flutter 原始产物：`novelai_canvas/build/app/outputs/flutter-apk/app-release.apk`
-- 大小：58,516,349 字节，约 55.8 MB
-- SHA-256：`aeb4c22e4e44b6856a0e4002e533a410c6fe15b01cac62d3e23b0a1f6f486b77`
-- 对应功能提交：`ae2213a fix: 修正生成交互与工具请求`
+- 大小：59,649,141 字节，约 56.9 MB
+- SHA-256：`be484ffb9399a32b64165f8450b940c84e9d5a0bfe71ec7d6ee15b041a3318df`
+- 构建内容：修复外部 Vibe 文件生成阻塞、禁用路由、重新编码、多提取值缓存及 0.01 参数精度。
+- 验证结果：`flutter analyze` 无问题，全部 71 项测试通过，Android Release 构建成功。
 
 该 APK 是本地构建产物，`release/` 已被 Git 忽略，不会推送到仓库。
 

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -14,11 +15,19 @@ class AdvancedReferenceCard extends StatelessWidget {
     required this.controller,
     required this.onAddVibe,
     required this.onAddCharacterReference,
+    required this.onEncodeVibe,
+    required this.onExportVibe,
   });
 
   final GenerationController controller;
   final VoidCallback onAddVibe;
   final VoidCallback onAddCharacterReference;
+
+  /// Called when the user taps the encode button on a vibe tile.
+  final void Function(int index) onEncodeVibe;
+
+  /// Called when the user taps the download button on a vibe tile.
+  final void Function(int index) onExportVibe;
 
   @override
   Widget build(BuildContext context) => LiquidGlass(
@@ -40,6 +49,8 @@ class AdvancedReferenceCard extends StatelessWidget {
             index: entry.$1,
             reference: entry.$2,
             controller: controller,
+            onEncode: () => onEncodeVibe(entry.$1),
+            onExport: () => onExportVibe(entry.$1),
           ),
         ),
         const Divider(height: 28),
@@ -97,59 +108,254 @@ class _VibeTile extends StatelessWidget {
     required this.index,
     required this.reference,
     required this.controller,
+    required this.onEncode,
+    required this.onExport,
   });
 
   final int index;
   final VibeReference reference;
   final GenerationController controller;
+  final VoidCallback onEncode;
+  final VoidCallback onExport;
 
   @override
-  Widget build(BuildContext context) => ExpansionTile(
-    leading: reference.imagePath == null
-        ? const Icon(Icons.blur_on_rounded)
-        : ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.file(
-              File(reference.imagePath!),
-              width: 44,
-              height: 44,
-              fit: BoxFit.cover,
+  Widget build(BuildContext context) {
+    final hasEncoding = reference.hasEncoding;
+    final canEncode = reference.hasReencodeSource && !hasEncoding;
+    final displayName = reference.displayName ?? 'Vibe ${index + 1}';
+    final colors = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header: delete · name · Anlas badge · enable toggle
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => controller.removeVibeReference(index),
+                icon: const Icon(Icons.delete_outline, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: '移除',
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  displayName,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              // Download the encoded vibe for reuse elsewhere.
+              if (hasEncoding)
+                IconButton(
+                  onPressed: onExport,
+                  icon: const Icon(Icons.download_rounded, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  tooltip: '下载 Vibe 文件',
+                ),
+              const SizedBox(width: 4),
+              // Anlas cost chip
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: hasEncoding
+                      ? colors.primaryContainer.withValues(alpha: 0.5)
+                      : colors.tertiaryContainer.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      hasEncoding ? '0' : '2',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: hasEncoding
+                            ? colors.onPrimaryContainer
+                            : colors.onTertiaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.local_fire_department_rounded,
+                      size: 12,
+                      color: hasEncoding
+                          ? colors.onPrimaryContainer
+                          : colors.onTertiaryContainer,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Switch.adaptive(
+                value: reference.enabled,
+                onChanged: hasEncoding || reference.enabled
+                    ? (value) => controller.updateVibeReference(
+                        index,
+                        reference.copyWith(enabled: value),
+                      )
+                    : null,
+              ),
+            ],
+          ),
+
+          // Wide preview image
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: _buildWidePreview(context, hasEncoding),
             ),
           ),
-    title: Text('Vibe ${index + 1}'),
-    subtitle: Text(
-      '强度 ${reference.strength.toStringAsFixed(2)} · '
-      '提取 ${reference.informationExtracted.toStringAsFixed(2)}',
-    ),
-    trailing: IconButton(
-      onPressed: () => controller.removeVibeReference(index),
-      icon: const Icon(Icons.delete_outline),
-    ),
-    children: [
-      Text('参考强度 ${reference.strength.toStringAsFixed(2)}'),
-      Slider(
-        value: reference.strength,
-        min: 0.01,
-        max: 1,
-        divisions: 99,
-        onChanged: (value) => controller.updateVibeReference(
-          index,
-          reference.copyWith(strength: value),
-        ),
+
+          // Reference Strength
+          const SizedBox(height: 8),
+          _labeledSlider(
+            context: context,
+            label: '参考强度',
+            value: reference.strength,
+            onChanged: (value) => controller.updateVibeReference(
+              index,
+              reference.copyWith(strength: value),
+            ),
+          ),
+
+          // Information Extracted — cached per value, so switching back to a
+          // previously encoded value costs nothing.
+          _labeledSlider(
+            context: context,
+            label: '信息提取',
+            value: reference.informationExtracted,
+            onChanged: (value) =>
+                controller.updateVibeInformationExtracted(index, value),
+          ),
+
+          // Encode button + status
+          const SizedBox(height: 4),
+          if (canEncode)
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: onEncode,
+                icon: const Icon(Icons.bolt_rounded, size: 18),
+                label: Text(
+                  reference.encodingCache.isEmpty
+                      ? '编码此 Vibe (2 Anlas)'
+                      : '编码当前提取值 (2 Anlas)',
+                ),
+              ),
+            )
+          else
+            Row(
+              children: [
+                Icon(
+                  hasEncoding
+                      ? Icons.check_circle_rounded
+                      : Icons.info_outline_rounded,
+                  size: 14,
+                  color: hasEncoding ? colors.primary : colors.tertiary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    hasEncoding ? '已编码，可直接启用参与生成。' : '文件不含原始参考图，无法按当前提取值重新编码。',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+          const Divider(height: 20),
+        ],
       ),
-      Text('信息提取 ${reference.informationExtracted.toStringAsFixed(2)}'),
-      Slider(
-        value: reference.informationExtracted,
-        min: 0.01,
-        max: 1,
-        divisions: 99,
-        onChanged: (value) => controller.updateVibeReference(
-          index,
-          reference.copyWith(informationExtracted: value),
-        ),
+    );
+  }
+
+  Widget _buildWidePreview(BuildContext context, bool hasEncoding) {
+    const height = 120.0;
+    // Priority 1: local image file
+    if (reference.imagePath != null && reference.imagePath!.isNotEmpty) {
+      return Image.file(
+        File(reference.imagePath!),
+        width: double.infinity,
+        height: height,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      );
+    }
+    // Priority 2: base64 thumbnail from vibe file
+    if (reference.thumbnailBase64 != null &&
+        reference.thumbnailBase64!.isNotEmpty) {
+      return Image.memory(
+        base64Decode(reference.thumbnailBase64!),
+        width: double.infinity,
+        height: height,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      );
+    }
+    // Priority 3: placeholder
+    return Container(
+      width: double.infinity,
+      height: height,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Icon(
+        hasEncoding ? Icons.verified_rounded : Icons.blur_on_rounded,
+        size: 36,
+        color: hasEncoding
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
       ),
-    ],
-  );
+    );
+  }
+
+  Widget _labeledSlider({
+    required BuildContext context,
+    required String label,
+    required double value,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 160,
+          child: Text(
+            '$label  ${value.toStringAsFixed(2)}',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 4,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            ),
+            child: Slider(
+              value: value,
+              min: 0.01,
+              max: 1,
+              divisions: 99,
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _CharacterReferenceTile extends StatelessWidget {

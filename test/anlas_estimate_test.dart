@@ -65,7 +65,7 @@ void main() {
     expect(partial.perImage, greaterThanOrEqualTo(2));
   });
 
-  test('角色与 Vibe 参考的附加费用即使 Opus 免费也会计入', () {
+  test('角色参考的附加费用即使 Opus 免费也会计入', () {
     final estimate = estimateAnlas(
       width: 832,
       height: 1216,
@@ -77,7 +77,7 @@ void main() {
     );
 
     expect(estimate.billableSamples, 0);
-    expect(estimate.referenceSurcharge, 10);
-    expect(estimate.total, 10);
+    expect(estimate.referenceSurcharge, 5);
+    expect(estimate.total, 5);
   });
 }

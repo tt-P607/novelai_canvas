@@ -129,27 +129,24 @@ class PromptAssistantRepositoryImpl implements PromptAssistantRepository {
     LlmAssistantSettings settings,
     String currentPositive,
     String currentNegative,
-  ) => [
-    {'role': 'system', 'content': settings.prompts.agentPrompt},
-    {
-      'role': 'system',
-      'content': jsonEncode({
-        'current_positive': currentPositive,
-        'current_negative': currentNegative,
-        'danbooru_tools_enabled': settings.danbooruToolsEnabled,
-        'instruction': _instruction(settings.danbooruToolsEnabled),
-      }),
-    },
-  ];
-
-  String _instruction(bool danbooruEnabled) {
-    const shared =
-        '只有用户明确要求生成、整理、修改、优化、补全或应用提示词时才调用 submit_prompt_result 工具；'
-        '该工具只控制全局正负面、多人正负面和人物位置，不得修改其他生成参数。不要在回复正文输出结构化 JSON。';
-    final tools = danbooruEnabled
-        ? '需要核对标签时可以使用 Danbooru 搜索或相关标签工具，并结合返回结果继续回答。'
-        : 'Danbooru 标签查询工具已关闭，不要尝试调用或声称已查询标签。';
-    return '普通问答、图片分析和创作讨论直接自然回复。$tools$shared';
+  ) {
+    final availableTools = _AgentSession.availableToolList(settings);
+    final toolGuidance = availableTools.map((t) => t.guidance).join('\n');
+    final instruction = availableTools.isEmpty
+        ? '当前没有可用工具。普通问答、图片分析和创作讨论直接自然回复。'
+        : '当前可用工具的使用指引：\n$toolGuidance\n\n'
+              '普通问答、图片分析和创作讨论直接自然回复，不要在正文输出结构化 JSON。';
+    return [
+      {'role': 'system', 'content': settings.prompts.agentPrompt},
+      {
+        'role': 'system',
+        'content': jsonEncode({
+          'current_positive': currentPositive,
+          'current_negative': currentNegative,
+          'instruction': instruction,
+        }),
+      },
+    ];
   }
 
   PromptAssistantReply _plainReply(String content) {
@@ -337,10 +334,14 @@ class _AgentSession {
   final Set<String> _executedSignatures = {};
   bool _danbooruAvailable;
 
-  List<Map<String, Object?>> get availableTools => [
-    if (_danbooruAvailable) ...PromptAssistantTools.danbooru,
-    ...PromptAssistantTools.prompt,
-  ];
+  static List<PromptAssistantTool> availableToolList(LlmAssistantSettings s) =>
+      [
+        if (s.danbooruToolsEnabled) ...PromptAssistantTools.danbooru,
+        ...PromptAssistantTools.prompt,
+      ];
+
+  List<Map<String, Object?>> get availableTools =>
+      availableToolList(settings).map((t) => t.schema).toList();
 
   void throwIfCancelled() {
     if (cancelToken?.isCancelled != true) return;

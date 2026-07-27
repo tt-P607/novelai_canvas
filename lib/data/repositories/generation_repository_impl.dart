@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../core/errors/app_exception.dart';
 import '../../core/network/backend_mode.dart';
+import '../../core/storage/character_reference_preprocessor.dart';
 import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/generated_image.dart';
 import '../../domain/entities/generation_task.dart';
@@ -150,7 +151,7 @@ class GenerationRepositoryImpl implements GenerationRepository {
   ) async {
     final spec = task.spec;
     return switch (spec.mode) {
-      GenerationMode.textToImage when spec.vibeReferences.isNotEmpty =>
+      GenerationMode.textToImage when _enabledVibes(spec).isNotEmpty =>
         _gatewayVibeTransferService.generate(
           await _gatewayVibeRequest(spec),
           cancelToken: cancelToken,
@@ -312,7 +313,9 @@ class GenerationRepositoryImpl implements GenerationRepository {
           .where((reference) => reference.enabled)
           .map(
             (reference) async => DirectorReferenceDto(
-              image: await _readBase64(reference.imagePath, '角色参考图片'),
+              image: await _readProcessedCharacterReference(
+                reference.imagePath,
+              ),
               description: reference.description,
               strength: reference.strength,
               fidelity: reference.fidelity,
@@ -332,7 +335,11 @@ class GenerationRepositoryImpl implements GenerationRepository {
       .toList();
 
   List<VibeReference> _enabledVibes(GenerationSpec spec) => spec.vibeReferences
-      .where((reference) => reference.enabled && reference.hasSource)
+      .where(
+        (reference) =>
+            reference.enabled &&
+            (reference.hasEncoding || reference.hasReencodeSource),
+      )
       .toList();
 
   CharacterCenterDto _nativeCenter(CharacterPosition position) =>
@@ -344,21 +351,20 @@ class GenerationRepositoryImpl implements GenerationRepository {
   }) async {
     final values = <String>[];
     for (final reference in _enabledVibes(spec)) {
-      final encoded = reference.encodedData;
-      if (encoded != null && encoded.isNotEmpty) {
-        values.add(encoded);
-        continue;
-      }
-      values.add(
-        await _nativeEncodeVibeService.encode(
+      // Prefer any cached/imported encoding for the active IE so already-paid
+      // encodings are never re-charged.
+      var encoded = reference.activeEncoding;
+      if (encoded == null || encoded.isEmpty) {
+        encoded = await _nativeEncodeVibeService.encode(
           NativeEncodeVibeRequestDto(
-            image: await _readBase64(reference.imagePath, 'Vibe 参考图片'),
+            image: await _vibeSourceBase64(reference),
             model: spec.model,
             informationExtracted: reference.informationExtracted,
           ),
           cancelToken: cancelToken,
-        ),
-      );
+        );
+      }
+      values.add(encoded);
     }
     return values;
   }
@@ -369,11 +375,11 @@ class GenerationRepositoryImpl implements GenerationRepository {
     final rawReferences = <String>[];
     final encodedReferences = <String>[];
     for (final reference in _enabledVibes(spec)) {
-      final encoded = reference.encodedData;
+      final encoded = reference.activeEncoding;
       if (encoded != null && encoded.isNotEmpty) {
         encodedReferences.add(encoded);
       } else {
-        rawReferences.add(await _readBase64(reference.imagePath, 'Vibe 参考图片'));
+        rawReferences.add(await _vibeSourceBase64(reference));
       }
     }
     return GatewayVibeTransferRequestDto(
@@ -434,9 +440,20 @@ class GenerationRepositoryImpl implements GenerationRepository {
     return token;
   }
 
+  Future<String> _vibeSourceBase64(VibeReference reference) async {
+    final embedded = reference.sourceImageBase64;
+    if (embedded != null && embedded.isNotEmpty) return embedded;
+    return _readBase64(reference.imagePath, 'Vibe 参考图片');
+  }
+
   Future<String> _readBase64(String? filePath, String label) async {
     final bytes = await _readFile(filePath, label);
     return base64Encode(bytes);
+  }
+
+  Future<String> _readProcessedCharacterReference(String? filePath) async {
+    final bytes = await _readFile(filePath, '角色参考图片');
+    return compute(CharacterReferencePreprocessor.process, bytes);
   }
 
   Future<String> _readDataUri(String? filePath, String label) async {

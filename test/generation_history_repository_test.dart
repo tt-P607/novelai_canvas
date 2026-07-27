@@ -59,7 +59,10 @@ void main() {
   });
 
   test('历史仓库支持保存、搜索、收藏和删除', () async {
-    final task = _task();
+    final task = _task(
+      status: GenerationTaskStatus.completed,
+      imagePath: '/results/task-1.png',
+    );
     await repository.save(task);
 
     expect(await repository.find(task.id), task);
@@ -89,6 +92,7 @@ void main() {
 GenerationTask _task({
   GenerationTaskStatus status = GenerationTaskStatus.queued,
   bool favorite = false,
+  String? imagePath,
 }) {
   final timestamp = DateTime.utc(2026, 7, 19, 8);
   return GenerationTask(
@@ -112,5 +116,6 @@ GenerationTask _task({
     createdAt: timestamp,
     updatedAt: timestamp,
     favorite: favorite,
+    imagePath: imagePath,
   );
 }

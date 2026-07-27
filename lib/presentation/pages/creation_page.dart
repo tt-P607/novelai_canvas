@@ -1,9 +1,18 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
+import '../../core/di/injection.dart';
 import '../../core/errors/error_message.dart';
+import '../../core/storage/vibe_file_parser.dart';
+import '../../data/api/native/dto/native_encode_vibe_request_dto.dart';
+import '../../data/api/native/services/native_encode_vibe_service.dart';
 import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
@@ -162,14 +171,22 @@ class _CreationPageState extends State<CreationPage> {
   List<Widget> _sections() => [
     _modeSelector(),
     const SizedBox(height: 14),
+    // The workbench only shows completed images the user selected from the
+    // strip. Streaming previews render inside the strip's generating tile so
+    // a batch run never yanks the user back to the latest frame.
     GenerationResultPanel(
-      previewBytes: controller.queueState.previewImageBytes,
-      previewStep: controller.queueState.previewStep,
-      totalSteps: controller.queueState.activeTask?.spec.steps ?? 0,
-      completedImagePath: controller.latestImagePath,
+      previewBytes: null,
+      previewStep: null,
+      totalSteps: 0,
+      completedImagePath:
+          controller.selectedRecentImage ?? controller.latestImagePath,
       onSendToImageTools: widget.onOpenImageTools,
       onInpaint: _inpaintLatest,
     ),
+    if (controller.recentImages.isNotEmpty) ...[
+      const SizedBox(height: 10),
+      _recentStrip(),
+    ],
     if (controller.mode != GenerationMode.textToImage) ...[
       const SizedBox(height: 14),
       _imageInputCard(),
@@ -217,6 +234,8 @@ class _CreationPageState extends State<CreationPage> {
         controller: controller,
         onAddVibe: _pickVibeImage,
         onAddCharacterReference: _pickCharacterReference,
+        onEncodeVibe: _encodeVibeAt,
+        onExportVibe: _exportVibeAt,
       ),
     ],
   ];
@@ -441,10 +460,26 @@ class _CreationPageState extends State<CreationPage> {
       ],
       if (controller.queueState.isRunning) ...[
         const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: controller.cancelActive,
-          icon: const Icon(Icons.stop_circle_outlined),
-          label: const Text('取消当前任务'),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: controller.cancelActive,
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: const Text('取消当前'),
+              ),
+            ),
+            if (controller.queueState.pendingCount > 0) ...[
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: controller.cancelAllPending,
+                  icon: const Icon(Icons.playlist_remove_rounded),
+                  label: Text('取消排队 ${controller.queueState.pendingCount}'),
+                ),
+              ),
+            ],
+          ],
         ),
       ],
     ],
@@ -497,6 +532,243 @@ class _CreationPageState extends State<CreationPage> {
         ],
       ),
     );
+  }
+
+  /// Compact horizontal thumbnail strip of recent in-memory results. Lets the
+  /// user flip back through the session's outputs without switching to the
+  /// 作品 page. Tapping a thumbnail shows it in the result panel; long-press
+  /// removes it.
+  Widget _recentStrip() {
+    final colors = Theme.of(context).colorScheme;
+    final slots = controller.generatingSlots;
+    return SizedBox(
+      height: 72,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        // ZIP button + generating placeholders + completed images.
+        itemCount: 1 + slots + controller.recentImages.length,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _zipDownloadButton(colors),
+            );
+          }
+          // Generating placeholder tiles sit right after the ZIP button. The
+          // first slot shows the live stream preview when available.
+          if (index <= slots) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _generatingTile(
+                colors,
+                index == 1 ? controller.queueState.previewImageBytes : null,
+              ),
+            );
+          }
+          final imgIndex = index - slots - 1;
+          final path = controller.recentImages[imgIndex];
+          final isSelected = controller.selectedRecentImage == path;
+          final isUnviewed = controller.unviewedImages.contains(path);
+          final isLast = imgIndex == controller.recentImages.length - 1;
+          return Padding(
+            padding: EdgeInsets.only(right: isLast ? 0 : 8),
+            child: GestureDetector(
+              onTap: () => controller.selectRecentImage(path),
+              onLongPress: () => controller.removeRecentImage(path),
+              child: Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isSelected
+                        ? colors.primary.withValues(alpha: 0.9)
+                        : colors.outlineVariant.withValues(alpha: 0.3),
+                    width: isSelected ? 2.5 : 1,
+                  ),
+                  // Unread items glow from the bottom edge so new results
+                  // stand out without overlaying the image itself.
+                  boxShadow: isUnviewed && !isSelected
+                      ? [
+                          BoxShadow(
+                            color: colors.tertiary.withValues(alpha: 0.7),
+                            blurRadius: 10,
+                            spreadRadius: 1.5,
+                            offset: const Offset(0, 5),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(
+                    File(path),
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Placeholder tile for in-flight tasks. Shows the live stream preview
+  /// frame when available, otherwise a spinner on a grey background.
+  Widget _generatingTile(ColorScheme colors, List<int>? previewBytes) {
+    if (previewBytes != null && previewBytes.isNotEmpty) {
+      return Container(
+        width: 72,
+        height: 72,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: colors.primary.withValues(alpha: 0.5),
+            width: 1.5,
+          ),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(
+              Uint8List.fromList(previewBytes),
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.low,
+            ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.4),
+                  ],
+                ),
+              ),
+            ),
+            Center(
+              child: SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white.withValues(alpha: 0.85),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Container(
+      width: 72,
+      height: 72,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Center(
+        child: SizedBox.square(
+          dimension: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: colors.primary.withValues(alpha: 0.6),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _zipDownloadButton(ColorScheme colors) => SizedBox(
+    width: 72,
+    height: 72,
+    child: Material(
+      color: colors.secondaryContainer.withValues(alpha: 0.4),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: _exportSessionZip,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.folder_zip_rounded, size: 22, color: colors.secondary),
+            const SizedBox(height: 2),
+            Text(
+              '${controller.recentImages.length}张',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.onSecondaryContainer,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  /// Packs every image in the recent strip into a single ZIP and lets the
+  /// user pick where to save it.
+  Future<void> _exportSessionZip() async {
+    if (controller.recentImages.isEmpty) return;
+    try {
+      showCompactSnackBar(
+        context,
+        icon: Icons.archive_rounded,
+        message: '正在打包 ${controller.recentImages.length} 张图片…',
+      );
+      final archive = Archive();
+      for (var i = 0; i < controller.recentImages.length; i++) {
+        final path = controller.recentImages[i];
+        final file = File(path);
+        if (!await file.exists()) continue;
+        final bytes = await file.readAsBytes();
+        final ext = path.toLowerCase().endsWith('.png')
+            ? 'png'
+            : path.toLowerCase().endsWith('.webp')
+            ? 'webp'
+            : 'jpg';
+        archive.addFile(ArchiveFile.bytes('novelai-${i + 1}.$ext', bytes));
+      }
+      final zipBytes = ZipEncoder().encode(archive);
+      final timestamp = DateTime.now().toLocal().toString().substring(0, 16);
+      final savedPath = await FilePicker.saveFile(
+        dialogTitle: '保存工作区图片',
+        fileName: 'novelai-session-$timestamp.zip',
+        bytes: Uint8List.fromList(zipBytes),
+      );
+      if (savedPath == null) {
+        final directory = await getApplicationDocumentsDirectory();
+        final fallback = File(
+          '${directory.path}/novelai-session-$timestamp.zip',
+        );
+        await fallback.writeAsBytes(zipBytes);
+        if (!mounted) return;
+        showCompactSnackBar(
+          context,
+          icon: Icons.download_done_rounded,
+          message: '已保存到 ${fallback.path}',
+        );
+        return;
+      }
+      if (!mounted) return;
+      showCompactSnackBar(
+        context,
+        icon: Icons.download_done_rounded,
+        message: '已保存 $savedPath',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showCompactSnackBar(
+        context,
+        icon: Icons.error_outline_rounded,
+        message: '打包失败：${friendlyErrorMessage(error)}',
+      );
+    }
   }
 
   Widget _modeSelector() => SegmentedButton<GenerationMode>(
@@ -587,8 +859,176 @@ class _CreationPageState extends State<CreationPage> {
   }
 
   Future<void> _pickVibeImage() async {
-    final image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) controller.addVibeReference(image.path);
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_outlined),
+              title: const Text('从相册选择图片'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final image = await _picker.pickImage(
+                  source: ImageSource.gallery,
+                );
+                if (image != null) controller.addVibeReference(image.path);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.code_rounded),
+              title: const Text('导入 Vibe 文件 (.naiv4vibe)'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final selection = await FilePicker.pickFile(
+                  type: FileType.custom,
+                  allowedExtensions: const [
+                    'naiv4vibe',
+                    'naiv4vibebundle',
+                    'json',
+                  ],
+                );
+                if (selection == null) return;
+                final path = selection.path;
+                if (path == null) return;
+                final bytes = await File(path).readAsBytes();
+                final parsedList = await VibeFileParser.parseBytes(
+                  bytes,
+                  defaultName: selection.name,
+                );
+                controller.addVibeReferencesBatch(parsedList);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _encodeVibeAt(int index) async {
+    try {
+      showCompactSnackBar(
+        context,
+        icon: Icons.bolt_rounded,
+        message: '正在编码 Vibe…',
+      );
+      await controller.encodeVibeAt(index, (reference, ie) async {
+        final imagePath = reference.imagePath;
+        final imageBase64 = imagePath != null && imagePath.isNotEmpty
+            ? base64Encode(await File(imagePath).readAsBytes())
+            : reference.sourceImageBase64!;
+        final service = getIt<NativeEncodeVibeService>();
+        return service.encode(
+          NativeEncodeVibeRequestDto(
+            image: imageBase64,
+            model: controller.model,
+            informationExtracted: ie,
+          ),
+        );
+      });
+      // Auto-enable the vibe after successful encoding.
+      final ref = controller.vibeReferences[index];
+      if (!ref.enabled) {
+        controller.updateVibeReference(index, ref.copyWith(enabled: true));
+      }
+      if (!mounted) return;
+      showCompactSnackBar(
+        context,
+        icon: Icons.check_circle_rounded,
+        message: 'Vibe 编码完成，已自动启用。',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showCompactSnackBar(
+        context,
+        icon: Icons.error_outline_rounded,
+        message: '编码失败：${friendlyErrorMessage(error)}',
+      );
+    }
+  }
+
+  /// Writes the vibe's encoding out as a `.naiv4vibe` file so it can be
+  /// re-imported later or used on the official site. The user picks the
+  /// destination via the platform save dialog; on platforms without a native
+  /// saver it falls back to the app documents directory.
+  Future<void> _exportVibeAt(int index) async {
+    final reference = controller.vibeReferences[index];
+    final encoding = reference.activeEncoding;
+    if (encoding == null || encoding.isEmpty) return;
+    try {
+      final name = (reference.displayName ?? 'vibe-${index + 1}').replaceAll(
+        RegExp(r'[\\/:*?"<>|]'),
+        '_',
+      );
+      final ie = reference.informationExtracted.toStringAsFixed(2);
+      final sourceImage =
+          reference.sourceImageBase64 ??
+          (reference.imagePath != null && reference.imagePath!.isNotEmpty
+              ? base64Encode(await File(reference.imagePath!).readAsBytes())
+              : null);
+      final cachedEncodings = Map<double, String>.from(reference.encodingCache)
+        ..putIfAbsent(reference.informationExtracted, () => encoding);
+      final payload = <String, Object?>{
+        'identifier': 'novelai-vibe-transfer',
+        'version': 1,
+        'type': 'image',
+        'name': name,
+        'model': controller.model,
+        'image': ?sourceImage,
+        'thumbnail': ?reference.thumbnailBase64,
+        'importInfo': {
+          'model': controller.model,
+          'information_extracted': reference.informationExtracted,
+          'strength': reference.strength,
+        },
+        'encodings': {
+          controller.model: {
+            for (final entry in cachedEncodings.entries)
+              entry.key.toStringAsFixed(2): {
+                'encoding': entry.value,
+                'params': {'information_extracted': entry.key},
+              },
+          },
+        },
+      };
+      final content = jsonEncode(payload);
+      final fileName = '$name-ie$ie.naiv4vibe';
+      // Let the user choose where to save; fall back to documents dir when
+      // the platform saver is unavailable or cancelled.
+      final savedPath = await FilePicker.saveFile(
+        dialogTitle: '保存 Vibe 文件',
+        fileName: fileName,
+        bytes: Uint8List.fromList(utf8.encode(content)),
+      );
+      if (savedPath == null) {
+        // saveFile with bytes returns null on cancel; write to docs dir only
+        // when bytes-based saving isn't supported (returns empty string).
+        final directory = await getApplicationDocumentsDirectory();
+        final fallback = File('${directory.path}/$fileName');
+        await fallback.writeAsString(content);
+        if (!mounted) return;
+        showCompactSnackBar(
+          context,
+          icon: Icons.download_done_rounded,
+          message: '已保存到 ${fallback.path}',
+        );
+        return;
+      }
+      if (!mounted) return;
+      showCompactSnackBar(
+        context,
+        icon: Icons.download_done_rounded,
+        message: '已保存到 $savedPath',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showCompactSnackBar(
+        context,
+        icon: Icons.error_outline_rounded,
+        message: '导出失败：${friendlyErrorMessage(error)}',
+      );
+    }
   }
 
   Future<void> _pickCharacterReference() async {

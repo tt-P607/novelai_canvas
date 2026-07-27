@@ -79,11 +79,40 @@ void main() {
     final restored = GenerationSpec.decode(advanced.encode());
 
     expect(restored.characterPrompts.single.position.x, 0.3);
-    expect(restored.vibeReferences.single.encodedData, 'encoded-vibe');
+    // Encoded payloads are stripped from snapshots; the vibe survives as a
+    // placeholder that must be re-encoded on cold restore.
+    expect(restored.vibeReferences.single.encodedData, isNull);
+    expect(restored.vibeReferences.single.hasEncoding, isFalse);
     expect(
       restored.characterReferences.single.type,
       CharacterReferenceType.character,
     );
+  });
+
+  test('网关忽略禁用的 Vibe 并走普通文生图端点', () async {
+    final gatewayDio = Dio()..httpClientAdapter = _GenerationAdapter();
+    final repository = _repository(
+      Dio()..httpClientAdapter = _GenerationAdapter(),
+      gatewayDio,
+    );
+    final base = _task(BackendMode.gateway);
+    final task = GenerationTask(
+      id: 'disabled-vibe',
+      spec: GenerationSpec.fromJson({
+        ...base.spec.toJson(),
+        'vibeReferences': [
+          const VibeReference(encodedData: 'IMPORTED', enabled: false).toJson(),
+        ],
+      }),
+      status: base.status,
+      createdAt: base.createdAt,
+      updatedAt: base.updatedAt,
+    );
+
+    await repository.execute(task);
+
+    final adapter = gatewayDio.httpClientAdapter as _GenerationAdapter;
+    expect(adapter.lastPath, '/v1/images/generations');
   });
 
   test('网关多角色使用 Chat system message 契约', () async {

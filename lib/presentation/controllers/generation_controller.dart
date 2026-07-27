@@ -40,6 +40,10 @@ class GenerationController extends ChangeNotifier {
       subscriptionTier = cachedTier;
       isOpus = cachedTier >= 3;
     }
+    // Restore the last-used generation parameters so a cold start (the OS
+    // reclaiming the app from the background) does not reset the user's
+    // carefully tuned settings back to defaults.
+    _restoreParams();
     _queueSubscription = _queue.states.listen((value) {
       queueState = value;
       notifyListeners();
@@ -49,6 +53,23 @@ class GenerationController extends ChangeNotifier {
       if (task.status == GenerationTaskStatus.completed &&
           task.imagePath != null) {
         latestImagePath = task.imagePath;
+        // Prepend to the in-memory recent strip without duplicates. No cap —
+        // the user can scroll back through the full session, and a ZIP export
+        // covers the whole set.
+        if (!recentImages.contains(task.imagePath)) {
+          recentImages.insert(0, task.imagePath!);
+        }
+        // Mark as unviewed so the strip highlights it until the user taps it.
+        unviewedImages.add(task.imagePath!);
+        // Auto-follow the latest result only when the user is already viewing
+        // the most recent image (or nothing yet). If they browsed back to an
+        // older one, leave them there — the new one lights up as unread.
+        final followingLatest =
+            selectedRecentImage == null ||
+            selectedRecentImage == latestImagePath;
+        if (followingLatest) {
+          selectedRecentImage = task.imagePath;
+        }
       }
       notifyListeners();
     });
@@ -94,6 +115,22 @@ class GenerationController extends ChangeNotifier {
   String? latestImagePath;
   GenerationQueueState queueState = const GenerationQueueState.idle();
 
+  /// In-memory recent results shown as a compact thumbnail strip on the
+  /// creation page. Cleared on app restart — for persistent history use the
+  /// 作品 page. Each entry is the file path of a completed image.
+  final List<String> recentImages = [];
+  String? selectedRecentImage;
+
+  /// Paths the user has not yet tapped to view. New completions are added
+  /// here so the strip can highlight them; [selectRecentImage] clears the
+  /// entry, marking it read.
+  final Set<String> unviewedImages = {};
+
+  /// How many tasks are currently queued or running. Drives the grey
+  /// placeholder tiles with a spinner at the front of the strip.
+  int get generatingSlots =>
+      queueState.pendingCount + (queueState.isRunning ? 1 : 0);
+
   /// Opus is subscription tier 3; only it grants the free low-cost sample.
   bool isOpus = false;
 
@@ -127,6 +164,13 @@ class GenerationController extends ChangeNotifier {
         .length,
     vibeReferenceCount: vibeReferences
         .where((reference) => reference.enabled)
+        .length,
+    uncachedVibeCount: vibeReferences
+        .where(
+          (reference) =>
+              reference.enabled &&
+              (reference.encodedData == null || reference.encodedData!.isEmpty),
+        )
         .length,
   );
 
@@ -172,27 +216,43 @@ class GenerationController extends ChangeNotifier {
     return DateTime.now().difference(checkedAt) > subscriptionTtl;
   }
 
-  void updatePrompt(String value) => prompt = value;
-  void updateNegativePrompt(String value) => negativePrompt = value;
-  void updateModel(String value) => model = value;
+  void updatePrompt(String value) {
+    prompt = value;
+    _saveParams();
+  }
+
+  void updateNegativePrompt(String value) {
+    negativePrompt = value;
+    _saveParams();
+  }
+
+  void updateModel(String value) {
+    model = value;
+    _saveParams();
+    notifyListeners();
+  }
 
   void updateSampler(String value) {
     sampler = value;
+    _saveParams();
     notifyListeners();
   }
 
   void updateNoiseSchedule(String value) {
     noiseSchedule = value;
+    _saveParams();
     notifyListeners();
   }
 
   void updateCfgRescale(double value) {
     cfgRescale = value;
+    _saveParams();
     notifyListeners();
   }
 
   void updateSampleCount(int value) {
     sampleCount = value.clamp(1, 4);
+    _saveParams();
     notifyListeners();
   }
 
@@ -227,12 +287,14 @@ class GenerationController extends ChangeNotifier {
       }
       maskImagePath = null;
     }
+    _saveParams();
     notifyListeners();
   }
 
   void updateSize({required int width, required int height}) {
     this.width = width.clamp(64, 1600);
     this.height = height.clamp(64, 1600);
+    _saveParams();
     notifyListeners();
   }
 
@@ -245,30 +307,36 @@ class GenerationController extends ChangeNotifier {
 
   void updateSteps(double value) {
     steps = value.round();
+    _saveParams();
     notifyListeners();
   }
 
   void updateScale(double value) {
     scale = value;
+    _saveParams();
     notifyListeners();
   }
 
   void updateSeed(String value) {
     seed = int.tryParse(value) ?? 0;
+    _saveParams();
   }
 
   void randomizeSeed() {
     seed = Random.secure().nextInt(0x7fffffff);
+    _saveParams();
     notifyListeners();
   }
 
   void updateStrength(double value) {
     strength = value;
+    _saveParams();
     notifyListeners();
   }
 
   void updateNoise(double value) {
     noise = value;
+    _saveParams();
     notifyListeners();
   }
 
@@ -308,6 +376,7 @@ class GenerationController extends ChangeNotifier {
 
   void updateAddOriginalImage(bool value) {
     addOriginalImage = value;
+    _saveParams();
     notifyListeners();
   }
 
@@ -327,9 +396,45 @@ class GenerationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addVibeReference(String imagePath) {
-    vibeReferences = [...vibeReferences, VibeReference(imagePath: imagePath)];
+  void addVibeReference(String imagePath, {String? encodedData}) {
+    // Fresh image uploads start disabled — user must encode first.
+    // Pre-encoded data (from vibe files) starts enabled.
+    vibeReferences = [
+      ...vibeReferences,
+      VibeReference(
+        imagePath: imagePath,
+        encodedData: encodedData,
+        enabled: encodedData != null && encodedData.isNotEmpty,
+      ),
+    ];
     notifyListeners();
+  }
+
+  void addVibeReferencesBatch(List<VibeReference> references) {
+    vibeReferences = [...vibeReferences, ...references];
+    notifyListeners();
+  }
+
+  Future<void> encodeVibeAt(
+    int index,
+    Future<String> Function(
+      VibeReference reference,
+      double informationExtracted,
+    )
+    encoder,
+  ) async {
+    final reference = vibeReferences[index];
+    if (!reference.hasReencodeSource) return;
+    final encoded = await encoder(reference, reference.informationExtracted);
+    updateVibeReference(index, reference.withEncoding(encoded));
+  }
+
+  /// Updates the IE of a vibe and restores the cached encoding for that value
+  /// when one exists, so switching between previously encoded IE values never
+  /// costs Anlas again.
+  void updateVibeInformationExtracted(int index, double value) {
+    final reference = vibeReferences[index];
+    updateVibeReference(index, reference.withInformationExtracted(value));
   }
 
   void updateVibeReference(int index, VibeReference value) {
@@ -362,11 +467,13 @@ class GenerationController extends ChangeNotifier {
 
   void updateControlnetStrength(double value) {
     controlnetStrength = value;
+    _saveParams();
     notifyListeners();
   }
 
   void updateNormalizeReferenceStrength(bool value) {
     normalizeReferenceStrength = value;
+    _saveParams();
     notifyListeners();
   }
 
@@ -386,8 +493,13 @@ class GenerationController extends ChangeNotifier {
         _backendModeProvider() != BackendMode.native) {
       return '角色参考当前仅支持 NovelAI 原生后端。';
     }
-    if (vibeReferences.any((reference) => !reference.hasSource)) {
-      return 'Vibe 参考缺少图片或预编码数据。';
+    if (vibeReferences.any(
+      (reference) =>
+          reference.enabled &&
+          !reference.hasEncoding &&
+          !reference.hasReencodeSource,
+    )) {
+      return '当前信息提取值没有可用编码，且 Vibe 文件不含原始参考图。';
     }
     return null;
   }
@@ -397,6 +509,7 @@ class GenerationController extends ChangeNotifier {
 
   void updateBatchCount(int value) {
     batchCount = value.clamp(1, 15);
+    _saveParams();
     notifyListeners();
   }
 
@@ -470,6 +583,30 @@ class GenerationController extends ChangeNotifier {
     if (task != null) await _queue.cancel(task.id);
   }
 
+  /// Cancels every queued (not-yet-running) task in one pass, leaving any
+  /// in-flight request untouched.
+  Future<void> cancelAllPending() => _queue.cancelPending();
+
+  /// Selects a recent image to display in the result panel without leaving
+  /// the creation page. Clears the unviewed badge so the strip stops
+  /// highlighting it.
+  void selectRecentImage(String path) {
+    selectedRecentImage = path;
+    latestImagePath = path;
+    unviewedImages.remove(path);
+    notifyListeners();
+  }
+
+  /// Removes a recent image from the in-memory strip.
+  void removeRecentImage(String path) {
+    recentImages.remove(path);
+    if (selectedRecentImage == path) {
+      selectedRecentImage = recentImages.isNotEmpty ? recentImages.first : null;
+      latestImagePath = selectedRecentImage;
+    }
+    notifyListeners();
+  }
+
   Future<void> reuse(String taskId) async {
     final task = await _historyRepository.find(taskId);
     if (task == null) return;
@@ -501,6 +638,73 @@ class GenerationController extends ChangeNotifier {
     controlnetStrength = spec.controlnetStrength;
     normalizeReferenceStrength = spec.normalizeReferenceStrength;
     notifyListeners();
+  }
+
+  /// Restores persisted generation parameters on cold start. Only scalar
+  /// settings are restored — vibe/character references carry large payloads
+  /// and are re-added by the user.
+  void _restoreParams() {
+    final prefs = _preferences;
+    if (prefs == null) return;
+    final params = prefs.generationParams;
+    if (params.isEmpty) return;
+    final m = params['mode']?.toString();
+    if (m != null) {
+      mode = GenerationMode.values.firstWhere(
+        (v) => v.name == m,
+        orElse: () => GenerationMode.textToImage,
+      );
+    }
+    model = params['model']?.toString() ?? model;
+    prompt = params['prompt']?.toString() ?? prompt;
+    negativePrompt = params['negativePrompt']?.toString() ?? negativePrompt;
+    width = (params['width'] as num?)?.toInt() ?? width;
+    height = (params['height'] as num?)?.toInt() ?? height;
+    steps = (params['steps'] as num?)?.toInt() ?? steps;
+    scale = (params['scale'] as num?)?.toDouble() ?? scale;
+    cfgRescale = (params['cfgRescale'] as num?)?.toDouble() ?? cfgRescale;
+    sampler = params['sampler']?.toString() ?? sampler;
+    noiseSchedule = params['noiseSchedule']?.toString() ?? noiseSchedule;
+    seed = (params['seed'] as num?)?.toInt() ?? seed;
+    sampleCount = (params['sampleCount'] as num?)?.toInt() ?? sampleCount;
+    strength = (params['strength'] as num?)?.toDouble() ?? strength;
+    noise = (params['noise'] as num?)?.toDouble() ?? noise;
+    addOriginalImage = params['addOriginalImage'] != false;
+    batchCount = (params['batchCount'] as num?)?.toInt() ?? batchCount;
+    controlnetStrength =
+        (params['controlnetStrength'] as num?)?.toDouble() ??
+        controlnetStrength;
+    normalizeReferenceStrength = params['normalizeReferenceStrength'] == true;
+  }
+
+  /// Persists the current scalar generation parameters. Called after each
+  /// mutation so a background kill never loses the user's tuning.
+  void _saveParams() {
+    final prefs = _preferences;
+    if (prefs == null) return;
+    unawaited(
+      prefs.setGenerationParams({
+        'mode': mode.name,
+        'model': model,
+        'prompt': prompt,
+        'negativePrompt': negativePrompt,
+        'width': width,
+        'height': height,
+        'steps': steps,
+        'scale': scale,
+        'cfgRescale': cfgRescale,
+        'sampler': sampler,
+        'noiseSchedule': noiseSchedule,
+        'seed': seed,
+        'sampleCount': sampleCount,
+        'strength': strength,
+        'noise': noise,
+        'addOriginalImage': addOriginalImage,
+        'batchCount': batchCount,
+        'controlnetStrength': controlnetStrength,
+        'normalizeReferenceStrength': normalizeReferenceStrength,
+      }),
+    );
   }
 
   int _align64(int value) =>

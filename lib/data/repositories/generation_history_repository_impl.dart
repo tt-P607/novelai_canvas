@@ -65,14 +65,29 @@ class GenerationHistoryRepositoryImpl implements GenerationHistoryRepository {
     final db = await _database.database;
     final normalizedQuery = query?.trim();
     final hasQuery = normalizedQuery != null && normalizedQuery.isNotEmpty;
+    // Only show tasks that produced an image — cancelled and failed tasks
+    // have no result to display, so they should not clutter the gallery.
+    final statusFilter =
+        '${GenerationTaskColumns.status} = ? AND '
+        '${GenerationTaskColumns.imagePath} IS NOT NULL';
+    final where = hasQuery
+        ? '$statusFilter AND '
+              '(${GenerationTaskColumns.prompt} LIKE ? OR '
+              '${GenerationTaskColumns.negativePrompt} LIKE ? OR '
+              '${GenerationTaskColumns.model} LIKE ?)'
+        : statusFilter;
+    final whereArgs = hasQuery
+        ? [
+            GenerationTaskStatus.completed.name,
+            '%$normalizedQuery%',
+            '%$normalizedQuery%',
+            '%$normalizedQuery%',
+          ]
+        : [GenerationTaskStatus.completed.name];
     final rows = await db.query(
       GenerationTaskColumns.table,
-      where: hasQuery
-          ? '(${GenerationTaskColumns.prompt} LIKE ? OR '
-                '${GenerationTaskColumns.negativePrompt} LIKE ? OR '
-                '${GenerationTaskColumns.model} LIKE ?)'
-          : null,
-      whereArgs: hasQuery ? List.filled(3, '%$normalizedQuery%') : null,
+      where: where,
+      whereArgs: whereArgs,
       orderBy:
           '${GenerationTaskColumns.favorite} DESC, '
           '${GenerationTaskColumns.updatedAt} DESC',
