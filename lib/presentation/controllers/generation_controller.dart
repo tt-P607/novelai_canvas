@@ -52,6 +52,11 @@ class GenerationController extends ChangeNotifier {
       latestTask = task;
       if (task.status == GenerationTaskStatus.completed &&
           task.imagePath != null) {
+        // Check auto-follow BEFORE updating latestImagePath, so we can tell
+        // whether the user was viewing the previous latest result.
+        final wasFollowingLatest =
+            selectedRecentImage == null ||
+            selectedRecentImage == latestImagePath;
         latestImagePath = task.imagePath;
         // Prepend to the in-memory recent strip without duplicates. No cap —
         // the user can scroll back through the full session, and a ZIP export
@@ -59,15 +64,11 @@ class GenerationController extends ChangeNotifier {
         if (!recentImages.contains(task.imagePath)) {
           recentImages.insert(0, task.imagePath!);
         }
-        // Auto-follow the latest result only when the user is already viewing
-        // the most recent image (or nothing yet). If they browsed back to an
-        // older one, leave them there — the new one lights up as unread.
-        final followingLatest =
-            selectedRecentImage == null ||
-            selectedRecentImage == latestImagePath;
-        if (followingLatest) {
-          // The user is already looking at this slot, so the new result is
-          // viewed immediately — no unread badge needed.
+        if (wasFollowingLatest) {
+          // Keep the user on the latest result. Pinning selectedRecentImage
+          // here is safe because wasFollowingLatest was checked against the
+          // previous latestImagePath — the user was (or would be) on the slot
+          // that just completed.
           selectedRecentImage = task.imagePath;
         } else {
           // The user is browsing an older image — mark the new one unread.
