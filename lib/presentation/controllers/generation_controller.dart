@@ -592,10 +592,11 @@ class GenerationController extends ChangeNotifier {
 
   /// Selects a recent image to display in the result panel without leaving
   /// the creation page. Clears the unviewed badge so the strip stops
-  /// highlighting it.
+  /// highlighting it. Does NOT touch [latestImagePath] — that field tracks
+  /// the most recent completion and is only set by the task stream, so the
+  /// workbench can tell whether the user is still following the latest result.
   void selectRecentImage(String path) {
     selectedRecentImage = path;
-    latestImagePath = path;
     unviewedImages.remove(path);
     notifyListeners();
   }
@@ -605,7 +606,6 @@ class GenerationController extends ChangeNotifier {
     recentImages.remove(path);
     if (selectedRecentImage == path) {
       selectedRecentImage = recentImages.isNotEmpty ? recentImages.first : null;
-      latestImagePath = selectedRecentImage;
     }
     notifyListeners();
   }
