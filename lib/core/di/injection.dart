@@ -6,8 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/api/danbooru/danbooru_service.dart';
 import '../../data/api/gateway/services/gateway_chat_service.dart';
 import '../../data/api/gateway/services/gateway_director_services.dart';
-import '../../data/api/gateway/services/gateway_edits_service.dart';
-import '../../data/api/gateway/services/gateway_generation_service.dart';
+import '../../data/api/gateway/services/gateway_image_stream_service.dart';
 import '../../data/api/gateway/services/gateway_image_to_image_service.dart';
 import '../../data/api/gateway/services/gateway_inpaint_service.dart';
 import '../../data/api/gateway/services/gateway_models_service.dart';
@@ -56,6 +55,7 @@ import '../network/api_mode_router.dart';
 import '../network/backend_connection_service.dart';
 import '../network/bearer_token_interceptor.dart';
 import '../network/dio_factory.dart';
+import '../network/gateway_endpoint_interceptor.dart';
 import '../network/native_endpoint_interceptor.dart';
 import '../queue/generation_queue.dart';
 import '../storage/generation_image_store.dart';
@@ -95,7 +95,6 @@ Future<void> _registerLocalStorage() async {
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
   getIt.registerSingleton<FlutterSecureStorage>(secureStorage);
-  await AppConstants.migrateImageCredential(secureStorage);
   getIt.registerLazySingleton<SecureCredentialStore>(
     () => FlutterSecureCredentialStore(getIt()),
   );
@@ -136,6 +135,8 @@ Future<void> _registerHistory() async {
 
 void _registerNetwork() {
   getIt.registerLazySingleton<ApiInspector>(ApiInspector.new);
+  // Migrate the legacy shared image credential into the per-backend keys so
+  // the native and gateway Dio instances can read independent credentials.
   getIt.registerLazySingleton<Dio>(
     () => DioFactory.createNative()
       ..interceptors.add(
@@ -144,10 +145,10 @@ void _registerNetwork() {
         ),
       )
       ..interceptors.add(
-        BearerTokenInterceptor(
+        BearerTokenInterceptor.resolver(
           credentialStore: getIt(),
-          credentialKey: AppConstants.imageApiCredentialKey,
-          missingCredentialMessage: '请先在设置中填写接口密钥。',
+          credentialKeyResolver: () => AppConstants.nativeImageApiKey,
+          missingCredentialMessage: '请先在设置中填写原生接口密钥。',
         ),
       )
       ..interceptors.add(getIt<ApiInspector>()),
@@ -156,10 +157,15 @@ void _registerNetwork() {
   getIt.registerLazySingleton<Dio>(
     () => DioFactory.createGateway()
       ..interceptors.add(
-        BearerTokenInterceptor(
+        GatewayEndpointInterceptor(
+          settingsProvider: () => getIt<AppSettingsController>().settings,
+        ),
+      )
+      ..interceptors.add(
+        BearerTokenInterceptor.resolver(
           credentialStore: getIt(),
-          credentialKey: AppConstants.imageApiCredentialKey,
-          missingCredentialMessage: '请先在设置中填写接口密钥。',
+          credentialKeyResolver: () => AppConstants.gatewayImageApiKey,
+          missingCredentialMessage: '请先在设置中填写 OpenAI 接口密钥。',
         ),
       )
       ..interceptors.add(getIt<ApiInspector>()),
@@ -193,10 +199,9 @@ void _registerApiServices() {
 
   getIt.registerLazySingleton(() => GatewayModelsService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayChatService(gatewayDio));
-  getIt.registerLazySingleton(() => GatewayGenerationService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayImageToImageService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayInpaintService(gatewayDio));
-  getIt.registerLazySingleton(() => GatewayEditsService(gatewayDio));
+  getIt.registerLazySingleton(() => GatewayImageStreamService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayVibeTransferService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayUpscaleService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayTagSuggestionService(gatewayDio));
@@ -218,11 +223,11 @@ void _registerRepositories() {
       nativeInpaintService: getIt(),
       nativeStreamService: getIt(),
       nativeEncodeVibeService: getIt(),
-      gatewayGenerationService: getIt(),
       gatewayChatService: getIt(),
       gatewayVibeTransferService: getIt(),
       gatewayImageToImageService: getIt(),
       gatewayInpaintService: getIt(),
+      gatewayImageStreamService: getIt(),
     ),
   );
   getIt.registerLazySingleton<ImageToolsRepository>(
@@ -266,13 +271,18 @@ Future<void> _registerControllers() async {
       historyRepository: getIt(),
       backendModeProvider: () =>
           getIt<AppSettingsController>().settings.backendMode,
+      backendConnectionService: getIt(),
       preferences: getIt(),
+      settingsListenable: getIt<AppSettingsController>(),
       subscriptionTierLoader: () async {
         final info = await getIt<NativeSubscriptionService>().getSubscription();
         return info.tier;
       },
     ),
   );
+  // Fetch gateway models immediately if the app starts in gateway mode so the
+  // model picker is correct on the first creation page open.
+  await getIt<GenerationController>().refreshModels();
   getIt.registerLazySingleton(
     () => HistoryController(repository: getIt(), queue: getIt()),
   );

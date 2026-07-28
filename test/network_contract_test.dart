@@ -5,6 +5,7 @@ import 'package:novelai_canvas/core/errors/app_exception.dart';
 import 'package:novelai_canvas/core/network/api_mode_router.dart';
 import 'package:novelai_canvas/core/network/backend_mode.dart';
 import 'package:novelai_canvas/core/network/bearer_token_interceptor.dart';
+import 'package:novelai_canvas/core/network/gateway_endpoint_interceptor.dart';
 import 'package:novelai_canvas/core/network/native_endpoint_interceptor.dart';
 import 'package:novelai_canvas/core/network/native_endpoint_resolver.dart';
 import 'package:novelai_canvas/core/network/network_error_mapper.dart';
@@ -93,7 +94,8 @@ void main() {
     const settings = AppSettings(
       onboardingCompleted: true,
       backendMode: BackendMode.native,
-      endpointBaseUrl: 'https://gateway.example.com/',
+      nativeEndpointBaseUrl: 'https://gateway.example.com/',
+      gatewayEndpointBaseUrl: '',
     );
     final dio = Dio();
     dio.interceptors.add(
@@ -172,7 +174,8 @@ void main() {
     const settings = AppSettings(
       onboardingCompleted: true,
       backendMode: BackendMode.native,
-      endpointBaseUrl: 'https://gateway.example.com/',
+      nativeEndpointBaseUrl: 'https://gateway.example.com/',
+      gatewayEndpointBaseUrl: '',
     );
 
     expect(
@@ -189,8 +192,9 @@ void main() {
     const settings = AppSettings(
       onboardingCompleted: true,
       backendMode: BackendMode.native,
-      endpointBaseUrl:
+      nativeEndpointBaseUrl:
           'http://gateway.example.com:31555/_api/ai/generate-image',
+      gatewayEndpointBaseUrl: '',
     );
     final dio = Dio();
     dio.interceptors.add(
@@ -211,7 +215,8 @@ void main() {
     const settings = AppSettings(
       onboardingCompleted: true,
       backendMode: BackendMode.native,
-      endpointBaseUrl: 'https://image.novelai.net/ai/generate-image',
+      nativeEndpointBaseUrl: 'https://image.novelai.net/ai/generate-image',
+      gatewayEndpointBaseUrl: '',
     );
 
     expect(
@@ -228,7 +233,8 @@ void main() {
     const settings = AppSettings(
       onboardingCompleted: true,
       backendMode: BackendMode.native,
-      endpointBaseUrl: 'https://gateway.example.com/_api/',
+      nativeEndpointBaseUrl: 'https://gateway.example.com/_api/',
+      gatewayEndpointBaseUrl: '',
     );
 
     expect(
@@ -260,7 +266,8 @@ void main() {
       final settings = AppSettings(
         onboardingCompleted: true,
         backendMode: BackendMode.gateway,
-        endpointBaseUrl: configuredUrl,
+        nativeEndpointBaseUrl: '',
+        gatewayEndpointBaseUrl: configuredUrl,
       );
       final gatewayClient = Dio();
       final adapter = _UriInspectAdapter();
@@ -279,6 +286,67 @@ void main() {
         reason: '配置地址：$configuredUrl',
       );
     }
+  });
+
+  test('网关拦截器在未经过 ApiModeRouter 时仍能将路径拼接到配置地址', () async {
+    for (final configuredUrl in const [
+      'https://gateway.example.com',
+      'https://gateway.example.com/',
+      'https://gateway.example.com/v1',
+      'https://gateway.example.com/v1/',
+    ]) {
+      final settings = AppSettings(
+        onboardingCompleted: true,
+        backendMode: BackendMode.gateway,
+        nativeEndpointBaseUrl: '',
+        gatewayEndpointBaseUrl: configuredUrl,
+      );
+      final dio = Dio();
+      dio.interceptors.add(
+        GatewayEndpointInterceptor(settingsProvider: () => settings),
+      );
+      final adapter = _UriInspectAdapter();
+      dio.httpClientAdapter = adapter;
+
+      await dio.post<Object?>('/v1/images/generations');
+
+      expect(
+        adapter.lastUri.toString(),
+        'https://gateway.example.com/v1/images/generations',
+        reason: '配置地址：$configuredUrl',
+      );
+    }
+  });
+
+  test('服务器返回 5xx 且 body 无法提取消息时，错误文案携带状态码与响应体片段', () {
+    final request = RequestOptions(path: '/v1/chat/completions');
+    final html = NetworkErrorMapper.map(
+      DioException(
+        requestOptions: request,
+        response: Response(
+          requestOptions: request,
+          statusCode: 502,
+          data: '<html><body>502 Bad Gateway</body></html>',
+        ),
+      ),
+    );
+    expect(html.message, contains('服务器错误'));
+    expect(html.message, contains('502'));
+    expect(html.message, contains('502 Bad Gateway'));
+
+    final empty = NetworkErrorMapper.map(
+      DioException(
+        requestOptions: request,
+        response: Response(
+          requestOptions: request,
+          statusCode: 500,
+          data: null,
+        ),
+      ),
+    );
+    expect(empty.message, contains('500'));
+    // Empty body must not append a dangling 「响应：」 suffix.
+    expect(empty.message, isNot(contains('响应：')));
   });
 }
 

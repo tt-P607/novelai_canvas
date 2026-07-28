@@ -11,7 +11,8 @@ import 'package:novelai_canvas/domain/entities/app_settings.dart';
 const _gatewaySettings = AppSettings(
   onboardingCompleted: true,
   backendMode: BackendMode.native,
-  endpointBaseUrl: 'https://gateway.example.com',
+  nativeEndpointBaseUrl: 'https://gateway.example.com',
+  gatewayEndpointBaseUrl: '',
 );
 
 void main() {

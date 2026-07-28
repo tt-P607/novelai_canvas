@@ -28,6 +28,10 @@ class NativeStreamEventDto {
 
   bool get isFinal => eventType == 'final';
 
+  bool get isError => eventType == 'error';
+
+  String? get errorMessage => isError ? image : null;
+
   factory NativeStreamEventDto.fromJson(Map<String, Object?> json) =>
       NativeStreamEventDto(
         eventType: json['event_type']?.toString() ?? 'intermediate',

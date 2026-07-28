@@ -16,10 +16,10 @@ class AppSettingsController extends ChangeNotifier {
     required BackendMode backendMode,
     required String endpointBaseUrl,
   }) async {
-    _settings = _settings.copyWith(
-      onboardingCompleted: true,
-      backendMode: backendMode,
-      endpointBaseUrl: endpointBaseUrl.trim(),
+    _settings = _applyEndpointForMode(
+      _settings.copyWith(onboardingCompleted: true, backendMode: backendMode),
+      backendMode,
+      endpointBaseUrl.trim(),
     );
     await _repository.save(_settings);
     notifyListeners();
@@ -35,11 +35,33 @@ class AppSettingsController extends ChangeNotifier {
     required BackendMode backendMode,
     required String endpointBaseUrl,
   }) async {
-    _settings = _settings.copyWith(
-      backendMode: backendMode,
-      endpointBaseUrl: endpointBaseUrl.trim(),
+    _settings = _applyEndpointForMode(
+      _settings.copyWith(backendMode: backendMode),
+      backendMode,
+      endpointBaseUrl.trim(),
     );
     await _repository.save(_settings);
     notifyListeners();
+  }
+
+  /// Switches only the active backend, preserving each backend's saved URL.
+  ///
+  /// The settings page calls this the moment the user taps the segment button so
+  /// the change takes effect without requiring a separate "save" tap.
+  Future<void> switchBackendMode(BackendMode backendMode) async {
+    _settings = _settings.copyWith(backendMode: backendMode);
+    await _repository.save(_settings);
+    notifyListeners();
+  }
+
+  static AppSettings _applyEndpointForMode(
+    AppSettings base,
+    BackendMode mode,
+    String url,
+  ) {
+    if (mode == BackendMode.native) {
+      return base.copyWith(nativeEndpointBaseUrl: url);
+    }
+    return base.copyWith(gatewayEndpointBaseUrl: url);
   }
 }

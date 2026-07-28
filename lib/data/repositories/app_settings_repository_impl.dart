@@ -12,13 +12,28 @@ class AppSettingsRepositoryImpl implements AppSettingsRepository {
   @override
   Future<AppSettings> load() async {
     final mode = _preferences.backendMode;
-    final storedUrl = _preferences.endpointBaseUrl.trim();
+    var nativeUrl = _preferences.nativeEndpointBaseUrl.trim();
+    var gatewayUrl = _preferences.gatewayEndpointBaseUrl.trim();
+    // One-time migration from the legacy single-value preference: assign the
+    // old shared URL to whichever backend was active when it was stored.
+    if (nativeUrl.isEmpty && gatewayUrl.isEmpty) {
+      final legacy = _preferences.endpointBaseUrl.trim();
+      if (legacy.isNotEmpty) {
+        if (mode == BackendMode.native) {
+          nativeUrl = legacy;
+        } else {
+          gatewayUrl = legacy;
+        }
+      }
+    }
+    if (nativeUrl.isEmpty && mode == BackendMode.native) {
+      nativeUrl = AppConstants.nativeBaseUrl;
+    }
     return AppSettings(
       onboardingCompleted: _preferences.onboardingCompleted,
       backendMode: mode,
-      endpointBaseUrl: storedUrl.isEmpty && mode == BackendMode.native
-          ? AppConstants.nativeBaseUrl
-          : storedUrl,
+      nativeEndpointBaseUrl: nativeUrl,
+      gatewayEndpointBaseUrl: gatewayUrl,
     );
   }
 
@@ -27,7 +42,8 @@ class AppSettingsRepositoryImpl implements AppSettingsRepository {
     await Future.wait([
       _preferences.setOnboardingCompleted(settings.onboardingCompleted),
       _preferences.setBackendMode(settings.backendMode),
-      _preferences.setEndpointBaseUrl(settings.endpointBaseUrl),
+      _preferences.setNativeEndpointBaseUrl(settings.nativeEndpointBaseUrl),
+      _preferences.setGatewayEndpointBaseUrl(settings.gatewayEndpointBaseUrl),
     ]);
   }
 }

@@ -94,8 +94,9 @@
 - NovelAI 原生文生图、图生图、局部重绘均支持渐进式中间预览。
 - 原生流式端点为 `/ai/generate-image-stream`。
 - 普通生成请求完整保留 `generate`、`img2img` 或 `infill` action，只在 `parameters` 中追加 `stream: sse`。
-- 网关的 Chat `stream=true` 只是最终结果 SSE 包装，不是 NovelAI 中间帧。
-- 当前创作页的渐进式开关只会在原生后端任务快照中生效，不能把该状态注入网关任务。
+- 网关通过 `/v1/images/generations-stream` 原样透传 NovelAI SSE，复用同一事件解析器；仅支持文生图。
+- 网关的 Chat `stream=true` 只是最终结果 SSE 包装，不是 NovelAI 中间帧，与 generations-stream 是两条独立路径。
+- 流式开关在文生图下对原生与网关均生效；图生图与局部重绘的流式仅原生支持。
 
 ### 4.2 导演工具
 
@@ -426,7 +427,7 @@ Android APK 或 iOS IPA 安装后依次验证：
 | `dart format lib test; flutter analyze` 被错误解析 | 分号未作为命令分隔符 | 用 `&&` 或分开调用 |
 | GitHub 拒绝 workflow 修改 | PAT 缺少 workflow scope | 不提交 workflow，或更新凭据后再改 |
 | 导演工具 500 且请求看似合法 | 给无需引导的工具发送多余字段 | 仅上色/表情发送 prompt/defry |
-| 网关模式开启流式后生成报错 | 原生 SSE 状态被错误注入网关 | 任务快照仅原生保存渐进式开关 |
+| 网关模式开启流式后生成报错 | 旧版本网关 Dio 未注入 baseUrl 或流式仅原生支持 | 网关已支持 `/v1/images/generations-stream`，且 baseUrl 由拦截器动态注入 |
 | UI 多角色下拉框过长 | 25 个点位使用 Dropdown | 使用独立 5×5 网格组件 |
 | Vision 要填两个模型 | 旧设置拆分文本模型和识图模型 | 统一为一个模型，识图时要求其支持多模态 |
 

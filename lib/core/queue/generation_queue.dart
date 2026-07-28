@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:developer';
 import 'dart:typed_data';
 
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -244,6 +245,12 @@ class GenerationQueue {
     _setWakeLockBestEffort(true);
 
     try {
+      log(
+        '[GenQueue] _runTask id=${running.id} '
+        'backendMode=${running.spec.backendMode.name} '
+        'mode=${running.spec.mode.name} '
+        'stream=${running.spec.stream} model="${running.spec.model}"',
+      );
       final result = running.spec.stream
           ? await _executeStream(running)
           : await _generationRepository.execute(running);

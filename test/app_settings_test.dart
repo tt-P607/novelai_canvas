@@ -14,7 +14,7 @@ void main() {
 
       expect(settings.onboardingCompleted, isFalse);
       expect(settings.backendMode, BackendMode.native);
-      expect(settings.endpointBaseUrl, AppConstants.nativeBaseUrl);
+      expect(settings.nativeEndpointBaseUrl, AppConstants.nativeBaseUrl);
       expect(settings.activeEndpoint.mode, BackendMode.native);
     },
   );
@@ -22,7 +22,7 @@ void main() {
   test('gateway endpoint follows configured base URL', () {
     final settings = const AppSettings.initial().copyWith(
       backendMode: BackendMode.gateway,
-      endpointBaseUrl: 'https://gateway.example.com',
+      gatewayEndpointBaseUrl: 'https://gateway.example.com',
     );
 
     expect(settings.activeEndpoint.mode, BackendMode.gateway);
@@ -36,7 +36,23 @@ void main() {
       'endpoint_base_url': '',
     });
 
-    expect(settings.endpointBaseUrl, AppConstants.nativeBaseUrl);
+    expect(settings.effectiveBaseUrl, AppConstants.nativeBaseUrl);
+  });
+
+  test('原生与网关各保存独立 URL，互不影响', () {
+    final settings = const AppSettings.initial().copyWith(
+      backendMode: BackendMode.gateway,
+      gatewayEndpointBaseUrl: 'https://gateway.example.com',
+    );
+
+    expect(
+      settings.endpointBaseUrlFor(BackendMode.gateway),
+      'https://gateway.example.com',
+    );
+    expect(
+      settings.endpointBaseUrlFor(BackendMode.native),
+      AppConstants.nativeBaseUrl,
+    );
   });
 
   test('提示词助手消息序列化后保留可重复填入的提示词结果', () {

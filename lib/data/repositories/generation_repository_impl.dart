@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/errors/app_exception.dart';
 import '../../core/network/backend_mode.dart';
+import '../../core/network/image_response_decoder.dart';
 import '../../core/storage/character_reference_preprocessor.dart';
 import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/generated_image.dart';
@@ -13,12 +15,12 @@ import '../../domain/entities/generation_task.dart';
 import '../../domain/entities/image_generation_result.dart';
 import '../../domain/repositories/generation_repository.dart';
 import '../api/gateway/dto/gateway_chat_request_dto.dart';
-import '../api/gateway/dto/gateway_generation_request_dto.dart';
+import '../api/gateway/dto/gateway_text_to_image_request_dto.dart';
 import '../api/gateway/dto/gateway_vibe_transfer_request_dto.dart';
 import '../api/gateway/dto/gateway_image_to_image_request_dto.dart';
 import '../api/gateway/dto/gateway_inpaint_request_dto.dart';
 import '../api/gateway/services/gateway_chat_service.dart';
-import '../api/gateway/services/gateway_generation_service.dart';
+import '../api/gateway/services/gateway_image_stream_service.dart';
 import '../api/gateway/services/gateway_vibe_transfer_service.dart';
 import '../api/gateway/services/gateway_image_to_image_service.dart';
 import '../api/gateway/services/gateway_inpaint_service.dart';
@@ -40,22 +42,22 @@ class GenerationRepositoryImpl implements GenerationRepository {
     required NativeImageToImageService nativeImageToImageService,
     required NativeInpaintService nativeInpaintService,
     required NativeStreamService nativeStreamService,
-    required GatewayGenerationService gatewayGenerationService,
     required GatewayChatService gatewayChatService,
     required GatewayVibeTransferService gatewayVibeTransferService,
     required GatewayImageToImageService gatewayImageToImageService,
     required GatewayInpaintService gatewayInpaintService,
+    required GatewayImageStreamService gatewayImageStreamService,
     required NativeEncodeVibeService nativeEncodeVibeService,
     Dio? downloadClient,
   }) : _nativeTextToImageService = nativeTextToImageService,
        _nativeImageToImageService = nativeImageToImageService,
        _nativeInpaintService = nativeInpaintService,
        _nativeStreamService = nativeStreamService,
-       _gatewayGenerationService = gatewayGenerationService,
        _gatewayChatService = gatewayChatService,
        _gatewayVibeTransferService = gatewayVibeTransferService,
        _gatewayImageToImageService = gatewayImageToImageService,
        _gatewayInpaintService = gatewayInpaintService,
+       _gatewayImageStreamService = gatewayImageStreamService,
        _nativeEncodeVibeService = nativeEncodeVibeService,
        _downloadClient = downloadClient ?? Dio();
 
@@ -63,11 +65,11 @@ class GenerationRepositoryImpl implements GenerationRepository {
   final NativeImageToImageService _nativeImageToImageService;
   final NativeInpaintService _nativeInpaintService;
   final NativeStreamService _nativeStreamService;
-  final GatewayGenerationService _gatewayGenerationService;
   final GatewayChatService _gatewayChatService;
   final GatewayVibeTransferService _gatewayVibeTransferService;
   final GatewayImageToImageService _gatewayImageToImageService;
   final GatewayInpaintService _gatewayInpaintService;
+  final GatewayImageStreamService _gatewayImageStreamService;
   final NativeEncodeVibeService _nativeEncodeVibeService;
   final Dio _downloadClient;
   final Map<String, CancelToken> _cancelTokens = {};
@@ -75,6 +77,12 @@ class GenerationRepositoryImpl implements GenerationRepository {
   @override
   Future<GenerationExecutionResult> execute(GenerationTask task) async {
     final cancelToken = _createCancelToken(task.id);
+    log(
+      '[GenerationRepo] execute taskId=${task.id} '
+      'backendMode=${task.spec.backendMode.name} '
+      'mode=${task.spec.mode.name} stream=${task.spec.stream} '
+      'model="${task.spec.model}"',
+    );
     try {
       final result = switch (task.spec.backendMode) {
         BackendMode.native => await _executeNative(task, cancelToken),
@@ -96,26 +104,78 @@ class GenerationRepositoryImpl implements GenerationRepository {
 
   @override
   Stream<GenerationPreview> stream(GenerationTask task) async* {
-    if (task.spec.backendMode != BackendMode.native) {
-      throw const UnsupportedFeatureException('流式生成仅支持 NovelAI 原生后端。');
-    }
     final cancelToken = _createCancelToken(task.id);
     try {
-      final native = await _nativeRequest(task.spec, cancelToken: cancelToken);
-      final request = NativeStreamRequestDto(native.toPayload());
-      await for (final event in _nativeStreamService.generate(
-        request,
-        cancelToken: cancelToken,
-      )) {
-        yield GenerationPreview(
-          taskId: task.id,
-          step: event.stepIndex,
-          isFinal: event.isFinal,
-          imageBytes: _nativeStreamService.decodeEventImage(event),
-        );
+      switch (task.spec.backendMode) {
+        case BackendMode.native:
+          // Native stream endpoint serves text-to-image, img2img and inpaint
+          // from the same /ai/generate-image-stream path; the action is
+          // determined by the payload, so _nativeRequest already builds the
+          // correct body for any mode.
+          final native = await _nativeRequest(
+            task.spec,
+            cancelToken: cancelToken,
+          );
+          final request = NativeStreamRequestDto(native.toPayload());
+          await for (final event in _nativeStreamService.generate(
+            request,
+            cancelToken: cancelToken,
+          )) {
+            yield GenerationPreview(
+              taskId: task.id,
+              step: event.stepIndex,
+              isFinal: event.isFinal,
+              imageBytes: _nativeStreamService.decodeEventImage(event),
+            );
+          }
+        case BackendMode.gateway:
+          yield* _streamGateway(task, cancelToken);
       }
     } finally {
       _cancelTokens.remove(task.id);
+    }
+  }
+
+  /// Gateway streaming sends every generation mode through the unified image
+  /// endpoint, which forwards NovelAI intermediate and final SSE events.
+  Stream<GenerationPreview> _streamGateway(
+    GenerationTask task,
+    CancelToken cancelToken,
+  ) async* {
+    final spec = task.spec;
+    switch (spec.mode) {
+      case GenerationMode.textToImage:
+        final body = const GatewayTextToImageRequestBuilder().build(
+          _gatewayTextToImageRequest(spec),
+        );
+        yield* _streamGatewayImages(task, body, cancelToken);
+      case GenerationMode.imageToImage:
+        final dto = await _gatewayImg2ImgDto(spec);
+        final body = _gatewayImageToImageService.builder.build(dto);
+        yield* _streamGatewayImages(task, body, cancelToken);
+      case GenerationMode.inpaint:
+        final dto = await _gatewayInpaintDto(spec);
+        final body = _gatewayInpaintService.builder.build(dto);
+        yield* _streamGatewayImages(task, body, cancelToken);
+    }
+  }
+
+  Stream<GenerationPreview> _streamGatewayImages(
+    GenerationTask task,
+    Map<String, Object?> body,
+    CancelToken cancelToken,
+  ) async* {
+    await for (final event in _gatewayImageStreamService.generate(
+      '/v1/images/generations',
+      data: {...body, 'stream': true},
+      cancelToken: cancelToken,
+    )) {
+      yield GenerationPreview(
+        taskId: task.id,
+        step: event.stepIndex,
+        isFinal: event.isFinal,
+        imageBytes: ImageResponseDecoder.decodeBase64Image(event.image),
+      );
     }
   }
 
@@ -150,67 +210,78 @@ class GenerationRepositoryImpl implements GenerationRepository {
     CancelToken cancelToken,
   ) async {
     final spec = task.spec;
+    log(
+      '[GenerationRepo] _executeGateway mode=${spec.mode.name} '
+      'model="${spec.model}" prompt.len=${spec.prompt.length} '
+      'vibes=${_enabledVibes(spec).length} '
+      'characters=${spec.characterPrompts.length}',
+    );
     return switch (spec.mode) {
       GenerationMode.textToImage when _enabledVibes(spec).isNotEmpty =>
         _gatewayVibeTransferService.generate(
           await _gatewayVibeRequest(spec),
           cancelToken: cancelToken,
         ),
+      // All text-to-image goes through /v1/chat/completions because many
+      // OpenAI-compatible proxies (e.g. newapi) do not register the
+      // /v1/images/generations DALL-E endpoint.
       GenerationMode.textToImage when spec.characterPrompts.isNotEmpty =>
         _gatewayChatService.complete(_gatewayCharacterRequest(spec)),
-      GenerationMode.textToImage => _gatewayGenerationService.generate(
-        GatewayGenerationRequestDto(
-          model: spec.model,
-          prompt: spec.prompt,
-          size: spec.size,
-          responseFormat: 'b64_json',
-        ),
-        cancelToken: cancelToken,
+      GenerationMode.textToImage => _gatewayChatService.complete(
+        _gatewayChatPlainRequest(spec),
       ),
       GenerationMode.imageToImage => _gatewayImageToImageService.generate(
-        GatewayImageToImageRequestDto(
-          model: spec.model,
-          prompt: spec.prompt,
-          image: await _readDataUri(spec.sourceImagePath, '图生图源图片'),
-          strength: spec.strength,
-          addOriginalImage: spec.addOriginalImage,
-          width: spec.width,
-          height: spec.height,
-          scale: spec.scale,
-          cfgRescale: spec.cfgRescale,
-          sampler: spec.sampler,
-          noiseSchedule: spec.noiseSchedule,
-          seed: spec.seed,
-          negativePrompt: spec.negativePrompt,
-          quality: spec.quality,
-          ucPreset: spec.ucPreset,
-          responseFormat: 'b64_json',
-        ),
+        await _gatewayImg2ImgDto(spec),
         cancelToken: cancelToken,
       ),
       GenerationMode.inpaint => _gatewayInpaintService.generate(
-        GatewayInpaintRequestDto(
-          model: spec.model,
-          prompt: spec.prompt,
-          image: await _readDataUri(spec.sourceImagePath, '局部重绘源图片'),
-          mask: await _readDataUri(spec.maskImagePath, '局部重绘蒙版'),
-          strength: spec.strength,
-          addOriginalImage: spec.addOriginalImage,
-          size: spec.size,
-          scale: spec.scale,
-          cfgRescale: spec.cfgRescale,
-          sampler: spec.sampler,
-          noiseSchedule: spec.noiseSchedule,
-          seed: spec.seed,
-          negativePrompt: spec.negativePrompt,
-          quality: spec.quality,
-          ucPreset: spec.ucPreset,
-          responseFormat: 'b64_json',
-        ),
+        await _gatewayInpaintDto(spec),
         cancelToken: cancelToken,
       ),
     };
   }
+
+  Future<GatewayImageToImageRequestDto> _gatewayImg2ImgDto(
+    GenerationSpec spec,
+  ) async => GatewayImageToImageRequestDto(
+    model: spec.model,
+    prompt: spec.prompt,
+    image: await _readBase64(spec.sourceImagePath, '图生图源图片'),
+    strength: spec.strength,
+    addOriginalImage: spec.addOriginalImage,
+    width: spec.width,
+    height: spec.height,
+    scale: spec.scale,
+    cfgRescale: spec.cfgRescale,
+    sampler: spec.sampler,
+    noiseSchedule: spec.noiseSchedule,
+    seed: spec.seed,
+    negativePrompt: spec.negativePrompt,
+    quality: spec.quality,
+    ucPreset: spec.ucPreset,
+    responseFormat: 'b64_json',
+  );
+
+  Future<GatewayInpaintRequestDto> _gatewayInpaintDto(
+    GenerationSpec spec,
+  ) async => GatewayInpaintRequestDto(
+    model: spec.model,
+    prompt: spec.prompt,
+    image: await _readBase64(spec.sourceImagePath, '局部重绘源图片'),
+    mask: await _readBase64(spec.maskImagePath, '局部重绘蒙版'),
+    strength: spec.strength,
+    addOriginalImage: spec.addOriginalImage,
+    size: spec.size,
+    scale: spec.scale,
+    cfgRescale: spec.cfgRescale,
+    sampler: spec.sampler,
+    noiseSchedule: spec.noiseSchedule,
+    seed: spec.seed,
+    negativePrompt: spec.negativePrompt,
+    quality: spec.quality,
+    ucPreset: spec.ucPreset,
+    responseFormat: 'b64_json',
+  );
 
   /// Builds the request DTO once so plain and streaming generation can never
   /// drift apart: the streaming endpoint only re-serialises the same payload.
@@ -399,6 +470,34 @@ class GenerationRepositoryImpl implements GenerationRepository {
     );
   }
 
+  GatewayTextToImageRequestDto _gatewayTextToImageRequest(
+    GenerationSpec spec,
+  ) => GatewayTextToImageRequestDto(
+    model: spec.model,
+    prompt: spec.prompt,
+    width: spec.width,
+    height: spec.height,
+    steps: spec.steps,
+    scale: spec.scale,
+    cfgRescale: spec.cfgRescale,
+    sampler: spec.sampler,
+    noiseSchedule: spec.noiseSchedule,
+    seed: spec.seed,
+    negativePrompt: spec.negativePrompt,
+    quality: spec.quality,
+    ucPreset: spec.ucPreset,
+    characters: _enabledCharacters(spec)
+        .map(
+          (character) => {
+            'prompt': character.prompt,
+            'negative_prompt': character.negativePrompt,
+            'position': [character.position.x, character.position.y],
+            'enabled': true,
+          },
+        )
+        .toList(),
+  );
+
   GatewayChatRequestDto _gatewayCharacterRequest(GenerationSpec spec) {
     final characters = _enabledCharacters(spec)
         .map(
@@ -433,6 +532,29 @@ class GenerationRepositoryImpl implements GenerationRepository {
     );
   }
 
+  /// Plain text-to-image via the Chat endpoint. Many OpenAI-compatible
+  /// proxies (e.g. newapi) only register `/v1/chat/completions`, so this is
+  /// the default path for gateway text-to-image without character prompts.
+  GatewayChatRequestDto _gatewayChatPlainRequest(GenerationSpec spec) =>
+      GatewayChatRequestDto(
+        model: spec.model,
+        messages: [
+          GatewayChatMessageDto(role: 'user', content: spec.prompt),
+          if (spec.negativePrompt.trim().isNotEmpty)
+            GatewayChatMessageDto(
+              role: 'system',
+              content: 'Negative prompt: ${spec.negativePrompt}',
+            ),
+        ],
+        scale: spec.scale,
+        cfgRescale: spec.cfgRescale,
+        width: spec.width,
+        height: spec.height,
+        sampler: spec.sampler,
+        noiseSchedule: spec.noiseSchedule,
+        responseFormat: 'b64_json',
+      );
+
   CancelToken _createCancelToken(String taskId) {
     _cancelTokens.remove(taskId)?.cancel('同一任务已开始新的请求。');
     final token = CancelToken();
@@ -454,12 +576,6 @@ class GenerationRepositoryImpl implements GenerationRepository {
   Future<String> _readProcessedCharacterReference(String? filePath) async {
     final bytes = await _readFile(filePath, '角色参考图片');
     return compute(CharacterReferencePreprocessor.process, bytes);
-  }
-
-  Future<String> _readDataUri(String? filePath, String label) async {
-    final bytes = await _readFile(filePath, label);
-    final mimeType = _mimeTypeFor(filePath!);
-    return 'data:$mimeType;base64,${base64Encode(bytes)}';
   }
 
   Future<Uint8List> _readFile(String? filePath, String label) async {
@@ -493,15 +609,6 @@ class GenerationRepositoryImpl implements GenerationRepository {
           response.headers.value(Headers.contentTypeHeader) ?? image.mimeType,
       revisedPrompt: image.revisedPrompt,
     );
-  }
-
-  String _mimeTypeFor(String path) {
-    final lower = path.toLowerCase();
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-      return 'image/jpeg';
-    }
-    if (lower.endsWith('.webp')) return 'image/webp';
-    return 'image/png';
   }
 }
 

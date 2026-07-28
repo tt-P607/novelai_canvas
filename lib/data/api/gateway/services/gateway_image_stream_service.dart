@@ -1,38 +1,36 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
-import '../../../../core/network/image_response_decoder.dart';
-import '../../../../core/network/json_patch_applier.dart';
 import '../../../../core/network/network_error_mapper.dart';
-import '../dto/native_stream_dto.dart';
+import '../../native/dto/native_stream_dto.dart';
+import '../gateway_api_service.dart';
 
-class NativeStreamService {
-  NativeStreamService(this.client, {NativeStreamRequestBuilder? builder})
-    : builder = builder ?? const NativeStreamRequestBuilder();
-
-  final Dio client;
-  final NativeStreamRequestBuilder builder;
+/// Streams NovelAI intermediate/final frames through the unified gateway
+/// image endpoint `/v1/images/generations` with `stream: true` in the request
+/// body. The gateway dispatches text-to-image / img2img / inpainting based on
+/// the presence of `image` / `mask` fields.
+///
+/// The gateway forwards the upstream NovelAI SSE verbatim, so the events are
+/// parsed with the same [parseNativeSseData] used for the native stream.
+class GatewayImageStreamService extends GatewayApiService {
+  GatewayImageStreamService(super.client);
 
   Stream<NativeStreamEventDto> generate(
-    NativeStreamRequestDto request, {
-    List<JsonMap> patches = const [],
+    String path, {
+    required Object data,
     CancelToken? cancelToken,
   }) async* {
     try {
       final response = await client.post<ResponseBody>(
-        '/ai/generate-image-stream',
-        data: builder.build(request, patches: patches),
+        path,
+        data: data,
+        // OpenAI 兼容代理（如 newapi）依据该头决定是否透传 SSE，
+        // 缺失时会把流式响应缓冲为普通 JSON，破坏渐进式预览。
         options: Options(
           responseType: ResponseType.stream,
-          headers: const {
-            'Content-Type': 'application/json',
-            'Accept': 'text/event-stream',
-            'Origin': 'https://novelai.net',
-            'Referer': 'https://novelai.net/',
-          },
+          headers: const {'Accept': 'text/event-stream'},
         ),
         cancelToken: cancelToken,
       );
@@ -54,7 +52,4 @@ class NativeStreamService {
       throw NetworkErrorMapper.map(error);
     }
   }
-
-  Uint8List decodeEventImage(NativeStreamEventDto event) =>
-      ImageResponseDecoder.decodeBase64Image(event.image);
 }

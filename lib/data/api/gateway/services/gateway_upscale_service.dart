@@ -14,7 +14,7 @@ class GatewayUpscaleService extends GatewayApiService {
     List<JsonMap> patches = const [],
     CancelToken? cancelToken,
   }) => postImageJson(
-    '/v1/images/upscale',
+    '/v1/images/generations',
     data: builder.build(request, patches: patches),
     cancelToken: cancelToken,
   );

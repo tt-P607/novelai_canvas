@@ -19,6 +19,15 @@ class AppPreferences {
     value,
   );
 
+  String _endpointFor(String key, String fallback) {
+    final value = _preferences.getString(key);
+    if (value != null && value.trim().isNotEmpty) return value.trim();
+    return fallback;
+  }
+
+  /// Legacy single-value endpoint, kept only for one-time migration to the
+  /// per-backend keys. New code must read [nativeEndpointBaseUrl] /
+  /// [gatewayEndpointBaseUrl] instead.
   String get endpointBaseUrl {
     final current = _preferences.getString(
       AppConstants.endpointBaseUrlPreferenceKey,
@@ -28,10 +37,22 @@ class AppPreferences {
         '';
   }
 
-  Future<void> setEndpointBaseUrl(String value) => _preferences.setString(
-    AppConstants.endpointBaseUrlPreferenceKey,
+  String get nativeEndpointBaseUrl =>
+      _endpointFor(AppConstants.nativeEndpointBaseUrlPreferenceKey, '');
+
+  Future<void> setNativeEndpointBaseUrl(String value) => _preferences.setString(
+    AppConstants.nativeEndpointBaseUrlPreferenceKey,
     value.trim(),
   );
+
+  String get gatewayEndpointBaseUrl =>
+      _endpointFor(AppConstants.gatewayEndpointBaseUrlPreferenceKey, '');
+
+  Future<void> setGatewayEndpointBaseUrl(String value) =>
+      _preferences.setString(
+        AppConstants.gatewayEndpointBaseUrlPreferenceKey,
+        value.trim(),
+      );
 
   BackendMode get backendMode {
     final stored = _preferences.getString(

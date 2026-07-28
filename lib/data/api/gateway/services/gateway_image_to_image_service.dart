@@ -16,7 +16,7 @@ class GatewayImageToImageService extends GatewayApiService {
     List<JsonMap> patches = const [],
     CancelToken? cancelToken,
   }) => postImageJson(
-    '/v1/images/img2img',
+    '/v1/images/generations',
     data: builder.build(request, patches: patches),
     cancelToken: cancelToken,
   );

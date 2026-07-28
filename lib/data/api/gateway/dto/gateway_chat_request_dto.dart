@@ -53,7 +53,11 @@ class GatewayChatRequestBuilder
     'height': request.height,
     'sampler': request.sampler,
     'noise_schedule': request.noiseSchedule,
-    'response_format': request.responseFormat,
+    // Chat Completions follows the OpenAI standard where response_format is
+    // an object {type: ...}. Go-based proxies (new-api) reject bare strings
+    // on this endpoint. Image endpoints are the opposite – they use the
+    // DALL-E convention where response_format is a plain string.
+    'response_format': {'type': request.responseFormat},
   }, patches);
 }
 

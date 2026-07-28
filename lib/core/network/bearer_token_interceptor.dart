@@ -8,12 +8,24 @@ class BearerTokenInterceptor extends Interceptor {
     required SecureCredentialStore credentialStore,
     required String credentialKey,
     required String missingCredentialMessage,
+  }) : this.resolver(
+         credentialStore: credentialStore,
+         credentialKeyResolver: () => credentialKey,
+         missingCredentialMessage: missingCredentialMessage,
+       );
+
+  /// Multi-key variant: the active key is resolved per request, so a single
+  /// Dio instance can serve both backends after the user switches modes.
+  BearerTokenInterceptor.resolver({
+    required SecureCredentialStore credentialStore,
+    required String Function() credentialKeyResolver,
+    required String missingCredentialMessage,
   }) : _credentialStore = credentialStore,
-       _credentialKey = credentialKey,
+       _credentialKeyResolver = credentialKeyResolver,
        _missingCredentialMessage = missingCredentialMessage;
 
   final SecureCredentialStore _credentialStore;
-  final String _credentialKey;
+  final String Function() _credentialKeyResolver;
   final String _missingCredentialMessage;
 
   @override
@@ -26,7 +38,9 @@ class BearerTokenInterceptor extends Interceptor {
       return;
     }
 
-    final token = (await _credentialStore.read(_credentialKey))?.trim();
+    final token = (await _credentialStore.read(
+      _credentialKeyResolver(),
+    ))?.trim();
     if (token == null || token.isEmpty) {
       handler.reject(
         DioException(

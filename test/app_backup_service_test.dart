@@ -18,7 +18,8 @@ void main() {
         const AppSettings(
           onboardingCompleted: true,
           backendMode: BackendMode.gateway,
-          endpointBaseUrl: 'https://gateway.example.com',
+          nativeEndpointBaseUrl: '',
+          gatewayEndpointBaseUrl: 'https://gateway.example.com',
         ),
       ),
       llmSettingsRepository: _MemoryLlmSettingsRepository(
@@ -78,7 +79,10 @@ void main() {
 
     expect(result.importedHistoryCount, 2);
     expect(appRepository.value.backendMode, BackendMode.gateway);
-    expect(appRepository.value.endpointBaseUrl, 'https://restored.example.com');
+    expect(
+      appRepository.value.gatewayEndpointBaseUrl,
+      'https://restored.example.com',
+    );
     expect(llmRepository.value.model, 'assistant-model');
     expect(history.items.keys, containsAll(['existing', 'new']));
     expect(history.items.length, 2);

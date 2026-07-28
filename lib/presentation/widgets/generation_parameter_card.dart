@@ -128,6 +128,7 @@ class _GenerationParameterCardState extends State<GenerationParameterCard> {
           height: controller.height,
           widthController: widget.widthController,
           heightController: widget.heightController,
+          backendMode: controller.backendMode,
           onChanged: (width, height) =>
               controller.updateSize(width: width, height: height),
         ),

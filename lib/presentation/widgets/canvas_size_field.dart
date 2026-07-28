@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/network/backend_mode.dart';
+
 /// Official canvas presets, grouped the way NovelAI presents them.
 class CanvasPreset {
   const CanvasPreset(this.label, this.width, this.height);
@@ -38,6 +40,7 @@ class CanvasSizeField extends StatelessWidget {
     required this.widthController,
     required this.heightController,
     required this.onChanged,
+    this.backendMode = BackendMode.native,
   });
 
   final int width;
@@ -45,6 +48,7 @@ class CanvasSizeField extends StatelessWidget {
   final TextEditingController widthController;
   final TextEditingController heightController;
   final void Function(int width, int height) onChanged;
+  final BackendMode backendMode;
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +61,11 @@ class CanvasSizeField extends StatelessWidget {
             Text('画幅', style: Theme.of(context).textTheme.labelLarge),
             const Spacer(),
             Text(
-              _isLarge ? '大图 · 消耗 Anlas' : '标准 · Opus 免费',
+              _isLarge
+                  ? '大图 · 消耗 Anlas'
+                  : (backendMode == BackendMode.native
+                        ? '标准 · Opus 免费'
+                        : '标准尺寸'),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: _isLarge ? colors.tertiary : colors.onSurfaceVariant,
               ),

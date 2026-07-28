@@ -1,21 +1,22 @@
 import '../../common/api_request_builder.dart';
 
 enum GatewayDirectorTool {
-  declutter('/v1/images/director-declutter'),
-  backgroundRemoval('/v1/images/director-bg-remover'),
-  lineart('/v1/images/director-lineart'),
-  sketch('/v1/images/director-sketch'),
-  colorize('/v1/images/director-colorize'),
-  emotion('/v1/images/director-emotion');
+  declutter('director-declutter'),
+  backgroundRemoval('director-bg-remover'),
+  lineart('director-lineart'),
+  sketch('director-sketch'),
+  colorize('director-colorize'),
+  emotion('director-emotion');
 
-  const GatewayDirectorTool(this.path);
-  final String path;
+  const GatewayDirectorTool(this.model);
+  final String model;
 }
 
 class GatewayDirectorRequestDto {
   const GatewayDirectorRequestDto({
     required this.tool,
     required this.image,
+    this.model = 'nai-diffusion-4-5-full',
     this.width,
     this.height,
     this.prompt,
@@ -24,6 +25,7 @@ class GatewayDirectorRequestDto {
   });
   final GatewayDirectorTool tool;
   final String image;
+  final String model;
   final int? width;
   final int? height;
   final String? prompt;
@@ -41,6 +43,8 @@ class GatewayDirectorRequestBuilder
     GatewayDirectorRequestDto request, {
     List<JsonMap> patches = const [],
   }) => applyRequestPatches({
+    'model': request.model,
+    'extra': request.tool.model,
     'image': request.image,
     if (request.width != null) 'width': request.width,
     if (request.height != null) 'height': request.height,

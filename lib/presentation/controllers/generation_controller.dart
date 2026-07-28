@@ -1,10 +1,12 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:developer';
+import 'dart:math' hide log;
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/errors/error_message.dart';
+import '../../core/network/backend_connection_service.dart';
 import '../../core/network/backend_mode.dart';
 import '../../core/queue/generation_queue.dart';
 import '../../core/storage/image_size_reader.dart';
@@ -12,6 +14,7 @@ import '../../data/datasources/local/app_preferences.dart';
 import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/anlas_estimate.dart';
 import '../../domain/entities/generation_task.dart';
+import '../../domain/entities/model_info.dart';
 import '../../domain/entities/prompt_assistant.dart';
 import '../../domain/repositories/generation_history_repository.dart';
 
@@ -20,14 +23,18 @@ class GenerationController extends ChangeNotifier {
     required GenerationQueue queue,
     required GenerationHistoryRepository historyRepository,
     required BackendMode Function() backendModeProvider,
+    BackendConnectionService? backendConnectionService,
     AppPreferences? preferences,
     Future<int> Function()? subscriptionTierLoader,
+    Listenable? settingsListenable,
     Uuid uuid = const Uuid(),
   }) : _queue = queue,
        _historyRepository = historyRepository,
        _backendModeProvider = backendModeProvider,
+       _backendConnectionService = backendConnectionService,
        _preferences = preferences,
        _subscriptionTierLoader = subscriptionTierLoader,
+       _settingsListenable = settingsListenable,
        _uuid = uuid,
        stream = preferences?.streamGenerationEnabled ?? false {
     _queue.taskInterval = Duration(
@@ -77,16 +84,37 @@ class GenerationController extends ChangeNotifier {
       }
       notifyListeners();
     });
+    // React to backend switches from the settings page without coupling the
+    // settings controller to this one: refresh models and subscription state.
+    _settingsListenable?.addListener(_onSettingsChanged);
+  }
+
+  void _onSettingsChanged() {
+    refreshModels(force: true);
+    refreshSubscription(force: true);
   }
 
   final GenerationQueue _queue;
   final GenerationHistoryRepository _historyRepository;
   final BackendMode Function() _backendModeProvider;
+  final BackendConnectionService? _backendConnectionService;
   final AppPreferences? _preferences;
   final Future<int> Function()? _subscriptionTierLoader;
+  final Listenable? _settingsListenable;
   final Uuid _uuid;
+
+  /// Models advertised by the active backend. Native mode keeps this empty so
+  /// the UI falls back to the built-in catalogue; gateway mode fills it from
+  /// `/v1/models` so the user picks a model the gateway actually supports.
+  List<ModelInfo> availableModels = const [];
+  bool modelsLoading = false;
+  String? modelsError;
   late final StreamSubscription<GenerationQueueState> _queueSubscription;
   late final StreamSubscription<GenerationTask> _taskSubscription;
+
+  /// Active backend. Gateway mode has no NovelAI subscription concept, so the
+  /// tier badge, cost preview and subscription notice must be hidden there.
+  BackendMode get backendMode => _backendModeProvider();
 
   GenerationMode mode = GenerationMode.textToImage;
   String model = 'nai-diffusion-4-5-full';
@@ -218,6 +246,48 @@ class GenerationController extends ChangeNotifier {
     final checkedAt = _preferences?.subscriptionCheckedAt;
     if (checkedAt == null) return true;
     return DateTime.now().difference(checkedAt) > subscriptionTtl;
+  }
+
+  /// Probes the gateway for `/v1/models` so the model picker only shows IDs
+  /// the configured OpenAI-compatible backend actually recognises. Native
+  /// mode keeps the built-in catalogue and clears any previously fetched list.
+  Future<void> refreshModels({bool force = false}) async {
+    final service = _backendConnectionService;
+    if (service == null) return;
+    if (modelsLoading) return;
+    final mode = _backendModeProvider();
+    if (mode != BackendMode.gateway) {
+      if (availableModels.isNotEmpty) {
+        availableModels = const [];
+        notifyListeners();
+      }
+      return;
+    }
+    if (!force && availableModels.isNotEmpty) return;
+
+    modelsLoading = true;
+    modelsError = null;
+    notifyListeners();
+    try {
+      final result = await service.probe(mode);
+      if (!result.reachable) {
+        modelsError = result.message ?? '无法连接到 OpenAI 兼容接口。';
+        return;
+      }
+      availableModels = result.models;
+      // If the saved model is not offered by this backend, switch to the first
+      // available one so generation does not silently 404 on an unknown ID.
+      if (result.models.isNotEmpty &&
+          !result.models.any((m) => m.id == model)) {
+        model = result.models.first.id;
+        _saveParams();
+      }
+    } catch (error) {
+      modelsError = friendlyErrorMessage(error);
+    } finally {
+      modelsLoading = false;
+      notifyListeners();
+    }
   }
 
   void updatePrompt(String value) {
@@ -546,6 +616,11 @@ class GenerationController extends ChangeNotifier {
 
   GenerationTask _buildTask() {
     final backendMode = _backendModeProvider();
+    log(
+      '[GenController] _buildTask backendMode=${backendMode.name} '
+      'mode=${mode.name} stream=$stream model="$model" '
+      'availableModels=${availableModels.length}',
+    );
     final now = DateTime.now().toUtc();
     return GenerationTask(
       id: _uuid.v4(),
@@ -562,14 +637,14 @@ class GenerationController extends ChangeNotifier {
         cfgRescale: cfgRescale,
         sampler: sampler,
         noiseSchedule: noiseSchedule,
-        seed: seed == 0 ? Random.secure().nextInt(0x7fffffff) : seed,
+        seed: seed == 0 ? Random.secure().nextInt(1000000000) : seed,
         sampleCount: sampleCount,
         sourceImagePath: sourceImagePath,
         maskImagePath: maskImagePath,
         strength: strength,
         noise: noise,
         addOriginalImage: mode == GenerationMode.inpaint && addOriginalImage,
-        stream: stream && backendMode == BackendMode.native,
+        stream: stream,
         characterPrompts: characterPrompts,
         vibeReferences: vibeReferences,
         characterReferences: characterReferences,
@@ -635,7 +710,7 @@ class GenerationController extends ChangeNotifier {
     addOriginalImage = spec.mode == GenerationMode.inpaint
         ? spec.addOriginalImage
         : true;
-    stream = spec.stream && spec.backendMode == BackendMode.native;
+    stream = spec.stream;
     characterPrompts = spec.characterPrompts;
     vibeReferences = spec.vibeReferences;
     characterReferences = spec.characterReferences;
@@ -716,6 +791,7 @@ class GenerationController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _settingsListenable?.removeListener(_onSettingsChanged);
     unawaited(_queueSubscription.cancel());
     unawaited(_taskSubscription.cancel());
     super.dispose();

@@ -6,9 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:novelai_canvas/core/network/image_response_decoder.dart';
 import 'package:novelai_canvas/data/api/gateway/dto/gateway_chat_request_dto.dart';
 import 'package:novelai_canvas/data/api/gateway/dto/gateway_director_request_dto.dart';
-import 'package:novelai_canvas/data/api/gateway/dto/gateway_edits_request_dto.dart';
 import 'package:novelai_canvas/data/api/native/dto/native_director_request_dto.dart';
-import 'package:novelai_canvas/data/api/gateway/dto/gateway_inpaint_request_dto.dart';
 import 'package:novelai_canvas/data/api/native/dto/native_stream_dto.dart';
 
 void main() {
@@ -60,34 +58,9 @@ void main() {
     expect(parseGatewayChatSseData('data: [DONE]')!.finished, isTrue);
   });
 
-  test('Edits 同时构建 JSON 与 multipart，导演端点独立', () {
-    const inpaint = GatewayInpaintRequestDto(
-      model: 'nai-diffusion-4-5-full',
-      prompt: 'test',
-      image: 'image',
-      mask: 'mask',
-    );
-    const builder = GatewayEditsRequestBuilder();
-    expect(
-      builder.build(const GatewayEditsRequestDto.json(inpaint))['mask'],
-      'mask',
-    );
-
-    final multipart = builder.buildMultipart(
-      GatewayEditsRequestDto.multipart(
-        request: inpaint,
-        imageBytes: Uint8List.fromList([1]),
-        imageFilename: 'image.png',
-      ),
-    );
-    expect(multipart.fields.any((field) => field.key == 'prompt'), isTrue);
-    expect(multipart.files.single.key, 'image');
-
-    expect(GatewayDirectorTool.declutter.path, '/v1/images/director-declutter');
-    expect(
-      GatewayDirectorTool.backgroundRemoval.path,
-      '/v1/images/director-bg-remover',
-    );
+  test('导演工具端点路径独立', () {
+    expect(GatewayDirectorTool.declutter.model, 'director-declutter');
+    expect(GatewayDirectorTool.backgroundRemoval.model, 'director-bg-remover');
   });
 
   test('原生流式构建器保留三种生成 action 并仅追加 stream 字段', () {

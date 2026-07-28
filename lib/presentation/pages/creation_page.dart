@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../core/di/injection.dart';
 import '../../core/errors/error_message.dart';
+import '../../core/network/backend_mode.dart';
 import '../../core/storage/vibe_file_parser.dart';
 import '../../data/api/native/dto/native_encode_vibe_request_dto.dart';
 import '../../data/api/native/services/native_encode_vibe_service.dart';
@@ -74,6 +75,7 @@ class _CreationPageState extends State<CreationPage> {
     );
     controller.addListener(_syncControllers);
     controller.refreshSubscription();
+    controller.refreshModels();
   }
 
   @override
@@ -117,8 +119,10 @@ class _CreationPageState extends State<CreationPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text('创作'),
-                      const SizedBox(width: 10),
-                      _tierBadge(),
+                      if (controller.backendMode == BackendMode.native) ...[
+                        const SizedBox(width: 10),
+                        _tierBadge(),
+                      ],
                     ],
                   ),
                   actions: [
@@ -238,6 +242,7 @@ class _CreationPageState extends State<CreationPage> {
       seedController: _seedController,
       widthController: _customWidthController,
       heightController: _customHeightController,
+      availableModels: controller.availableModels,
     ),
     if (controller.mode == GenerationMode.textToImage) ...[
       const SizedBox(height: 18),
@@ -459,12 +464,14 @@ class _CreationPageState extends State<CreationPage> {
                         ? '连续生成 ×${controller.batchCount}'
                         : '立即生成'),
             ),
-            const SizedBox(width: 8),
-            _anlasBadge(),
+            if (controller.backendMode == BackendMode.native) ...[
+              const SizedBox(width: 8),
+              _anlasBadge(),
+            ],
           ],
         ),
       ),
-      _subscriptionNotice(),
+      if (controller.backendMode == BackendMode.native) _subscriptionNotice(),
       if (controller.latestTask != null) ...[
         const SizedBox(height: 8),
         _statusCard(controller.latestTask!),

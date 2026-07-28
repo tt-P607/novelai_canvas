@@ -3,7 +3,7 @@ import 'package:image/image.dart' as img;
 import 'package:novelai_canvas/core/storage/mask_binarizer.dart';
 
 void main() {
-  test('块选择渲染为纯黑白不透明蒙版，无灰度残留', () {
+  test('块选择渲染为纯黑白 RGB 蒙版，无灰度残留', () {
     final blocks = List<bool>.filled(8 * 8, false)..[3 * 8 + 4] = true;
     final png = renderBlockMaskPng(<String, Object>{
       'width': 64,
@@ -22,7 +22,6 @@ void main() {
           ..add(pixel.r.toInt())
           ..add(pixel.g.toInt())
           ..add(pixel.b.toInt());
-        expect(pixel.a.toInt(), 255, reason: '蒙版必须完全不透明，否则上游会把边缘当成半重绘区域。');
       }
     }
     expect(

@@ -63,7 +63,7 @@ class GatewayInpaintRequestBuilder
     if (request.seed != null) 'seed': request.seed,
     if (request.negativePrompt != null)
       'negative_prompt': request.negativePrompt,
-    'quality': request.quality,
+    'qualityToggle': request.quality,
     'ucPreset': request.ucPreset,
     'response_format': request.responseFormat,
     if (request.imageFormat != null) 'image_format': request.imageFormat,

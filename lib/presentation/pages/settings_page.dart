@@ -41,27 +41,58 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     final settings = widget.controller.settings;
     _mode = settings.backendMode;
-    _endpointUrlController = TextEditingController(
-      text: settings.endpointBaseUrl,
-    );
+    _endpointUrlController = TextEditingController();
     _apiKeyController = TextEditingController();
-    _loadSecret();
+    _refreshEditors();
   }
 
-  Future<void> _loadSecret() async {
-    final value = await widget.credentialStore.read(
-      AppConstants.imageApiCredentialKey,
+  String _credentialKeyFor(BackendMode mode) => switch (mode) {
+    BackendMode.native => AppConstants.nativeImageApiKey,
+    BackendMode.gateway => AppConstants.gatewayImageApiKey,
+  };
+
+  String _endpointFor(BackendMode mode) =>
+      widget.controller.settings.endpointBaseUrlFor(mode);
+
+  Future<void> _refreshEditors() async {
+    _endpointUrlController.text = _endpointFor(_mode);
+    final key = await widget.credentialStore.read(_credentialKeyFor(_mode));
+    _apiKeyController.text = key ?? '';
+    if (mounted) {
+      setState(() => _loadingSecrets = false);
+    }
+  }
+
+  Future<void> _onModeChanged(BackendMode next) async {
+    if (next == _mode) return;
+    // Auto-save the current URL/key before switching so the user does not
+    // lose what they typed when they forget to press "保存设置". Empty values
+    // are written too (clearing the field), matching the explicit save flow.
+    await _autoSaveCurrentMode();
+    setState(() {
+      _mode = next;
+      _loadingSecrets = true;
+    });
+    // Persist the mode immediately so generation uses it without a separate
+    // save tap; the URL/key fields keep their per-backend saved values.
+    await widget.controller.switchBackendMode(next);
+    await _refreshEditors();
+  }
+
+  /// Saves the URL and key currently visible in the editors without
+  /// validation, so switching modes preserves the user's input. Unlike
+  /// [_save], this skips the empty-URL check and scheme validation because
+  /// the user may be mid-edit.
+  Future<void> _autoSaveCurrentMode() async {
+    final endpointUrl = _endpointUrlController.text.trim();
+    await widget.controller.updateBackend(
+      backendMode: _mode,
+      endpointBaseUrl: endpointUrl,
     );
-    if (!mounted) return;
-    _apiKeyController.text = value ?? '';
-    setState(() => _loadingSecrets = false);
-  }
-
-  @override
-  void dispose() {
-    _endpointUrlController.dispose();
-    _apiKeyController.dispose();
-    super.dispose();
+    await _writeOrDelete(
+      _credentialKeyFor(_mode),
+      _apiKeyController.text.trim(),
+    );
   }
 
   Future<void> _save() async {
@@ -85,7 +116,7 @@ class _SettingsPageState extends State<SettingsPage> {
       endpointBaseUrl: endpointUrl,
     );
     await _writeOrDelete(
-      AppConstants.imageApiCredentialKey,
+      _credentialKeyFor(_mode),
       _apiKeyController.text.trim(),
     );
     if (!mounted) return;
@@ -102,6 +133,13 @@ class _SettingsPageState extends State<SettingsPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  void dispose() {
+    _endpointUrlController.dispose();
+    _apiKeyController.dispose();
+    super.dispose();
   }
 
   @override
@@ -124,7 +162,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          '接口格式',
+                          '接口配置',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 16),
@@ -142,9 +180,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               )
                               .toList(),
                           selected: {_mode},
-                          onSelectionChanged: (value) {
-                            setState(() => _mode = value.first);
-                          },
+                          onSelectionChanged: (value) =>
+                              _onModeChanged(value.first),
                         ),
                         const SizedBox(height: 18),
                         TextField(
@@ -162,32 +199,17 @@ class _SettingsPageState extends State<SettingsPage> {
                             prefixIcon: const Icon(Icons.link_rounded),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          '接口密钥',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 14),
                         if (_loadingSecrets)
                           const LinearProgressIndicator()
-                        else ...[
+                        else
                           TextField(
                             controller: _apiKeyController,
                             obscureText: _obscureApiKey,
                             autocorrect: false,
                             enableSuggestions: false,
                             decoration: InputDecoration(
-                              labelText: '密钥',
+                              labelText: '接口密钥',
                               hintText: _mode == BackendMode.native
                                   ? 'NovelAI Token'
                                   : 'API Key（按服务要求填写）',
@@ -204,7 +226,6 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                   ),
@@ -305,7 +326,7 @@ class _SettingsHero extends StatelessWidget {
               ),
               const SizedBox(height: 5),
               Text(
-                '上方仅切换请求格式；URL 与密钥共用一套配置，并只保存在本机安全存储中。',
+                '原生与 OpenAI 各自独立保存 URL 和密钥；切换上方按钮即可编辑对应后端的配置，并只保存在本机安全存储中。',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
                   height: 1.45,

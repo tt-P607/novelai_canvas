@@ -70,8 +70,19 @@ abstract final class ImageResponseDecoder {
   }
 
   static GeneratedImage decodeChatMarkdown(String content) {
+    // The gateway returns a data URI when response_format=b64_json, or a
+    // markdown image link when response_format=url. Both must be handled.
+    final trimmed = content.trim();
+    if (trimmed.startsWith('data:')) {
+      final comma = trimmed.indexOf(',');
+      if (comma < 0) {
+        throw const DataParsingException('Chat 响应的 data URI 缺少数据。');
+      }
+      final payload = trimmed.substring(comma + 1);
+      return GeneratedImage(bytes: decodeBase64Image(payload));
+    }
     final markdown = RegExp(r'!\[[^\]]*\]\(([^)]+)\)').firstMatch(content);
-    final rawUrl = markdown?.group(1) ?? content.trim();
+    final rawUrl = markdown?.group(1) ?? trimmed;
     final uri = Uri.tryParse(rawUrl);
     if (uri == null || !uri.hasScheme) {
       throw const DataParsingException('Chat 响应中没有有效图片链接。');

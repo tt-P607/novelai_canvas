@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:dio/dio.dart';
 
 import '../../domain/entities/app_settings.dart';
@@ -30,9 +32,14 @@ class NativeEndpointInterceptor extends Interceptor {
     // silently contacting official NovelAI hosts behind their back.
     final settings = _settingsProvider();
     final requestPath = options.uri.path;
-    options.baseUrl = _accountPaths.contains(requestPath)
+    final baseUrl = _accountPaths.contains(requestPath)
         ? NativeEndpointResolver.accountBaseUrl(settings)
         : NativeEndpointResolver.imageBaseUrl(settings);
+    log(
+      '[NativeEndpointInterceptor] backendMode=${settings.backendMode} '
+      '→ baseUrl="$baseUrl" path="${options.path}"',
+    );
+    options.baseUrl = baseUrl;
     handler.next(options);
   }
 }

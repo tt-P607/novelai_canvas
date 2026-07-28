@@ -32,20 +32,61 @@ class _OnboardingPageState extends State<OnboardingPage> {
   void initState() {
     super.initState();
     _mode = widget.controller.settings.backendMode;
-    _endpointController = TextEditingController(
-      text: widget.controller.settings.endpointBaseUrl.isEmpty
-          ? AppConstants.nativeBaseUrl
-          : widget.controller.settings.endpointBaseUrl,
-    );
+    _endpointController = TextEditingController();
     _apiKeyController = TextEditingController();
-    _loadSecret();
+    _refreshEditors();
   }
 
-  Future<void> _loadSecret() async {
-    _apiKeyController.text =
-        await widget.credentialStore.read(AppConstants.imageApiCredentialKey) ??
-        '';
+  String _endpointFor(BackendMode mode) {
+    final value = widget.controller.settings.endpointBaseUrlFor(mode).trim();
+    if (mode == BackendMode.native && value.isEmpty) {
+      return AppConstants.nativeBaseUrl;
+    }
+    return value;
+  }
+
+  String _credentialKeyFor(BackendMode mode) => switch (mode) {
+    BackendMode.native => AppConstants.nativeImageApiKey,
+    BackendMode.gateway => AppConstants.gatewayImageApiKey,
+  };
+
+  Future<void> _refreshEditors() async {
+    _endpointController.text = _endpointFor(_mode);
+    final key = await widget.credentialStore.read(_credentialKeyFor(_mode));
+    _apiKeyController.text = key ?? '';
     if (mounted) setState(() => _loadingSecret = false);
+  }
+
+  Future<void> _onModeChanged(BackendMode next) async {
+    if (next == _mode) return;
+    // Auto-save the current URL/key before switching so the user does not
+    // lose what they typed when they forget to press 进入绘境.
+    await _autoSaveCurrentMode();
+    setState(() {
+      _mode = next;
+      _loadingSecret = true;
+    });
+    // Persist the mode immediately so the onboarding flow ends in the right
+    // state even if the user navigates away before pressing 进入绘境.
+    await widget.controller.switchBackendMode(next);
+    await _refreshEditors();
+  }
+
+  /// Saves the URL and key currently visible in the editors without
+  /// validation, so switching modes preserves the user's input.
+  Future<void> _autoSaveCurrentMode() async {
+    final endpointUrl = _endpointController.text.trim();
+    await widget.controller.updateBackend(
+      backendMode: _mode,
+      endpointBaseUrl: endpointUrl,
+    );
+    final key = _apiKeyController.text.trim();
+    final credentialKey = _credentialKeyFor(_mode);
+    if (key.isEmpty) {
+      await widget.credentialStore.delete(credentialKey);
+    } else {
+      await widget.credentialStore.write(key: credentialKey, value: key);
+    }
   }
 
   @override
@@ -59,13 +100,11 @@ class _OnboardingPageState extends State<OnboardingPage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     final key = _apiKeyController.text.trim();
+    final credentialKey = _credentialKeyFor(_mode);
     if (key.isEmpty) {
-      await widget.credentialStore.delete(AppConstants.imageApiCredentialKey);
+      await widget.credentialStore.delete(credentialKey);
     } else {
-      await widget.credentialStore.write(
-        key: AppConstants.imageApiCredentialKey,
-        value: key,
-      );
+      await widget.credentialStore.write(key: credentialKey, value: key);
     }
     await widget.controller.completeOnboarding(
       backendMode: _mode,
@@ -124,7 +163,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '这里只切换请求格式。URL 与密钥使用同一套输入，后续可随时在设置中修改。',
+                      '原生与 OpenAI 各自独立保存 URL 和密钥；切换上方按钮即可编辑对应后端的配置，后续可随时在设置中修改。',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: colors.onSurfaceVariant,
                         height: 1.55,
@@ -150,17 +189,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           )
                           .toList(),
                       selected: {_mode},
-                      onSelectionChanged: (selection) {
-                        final nextMode = selection.first;
-                        setState(() {
-                          _mode = nextMode;
-                          if (nextMode == BackendMode.native &&
-                              _endpointController.text.trim().isEmpty) {
-                            _endpointController.text =
-                                AppConstants.nativeBaseUrl;
-                          }
-                        });
-                      },
+                      onSelectionChanged: (selection) =>
+                          _onModeChanged(selection.first),
                     ),
                     const SizedBox(height: 20),
                     TextFormField(
