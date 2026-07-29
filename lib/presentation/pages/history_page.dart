@@ -48,7 +48,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 ],
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 sliver: SliverToBoxAdapter(
                   child: SearchBar(
                     hintText: '搜索提示词或模型',
@@ -62,6 +62,30 @@ class _HistoryPageState extends State<HistoryPage> {
                           icon: const Icon(Icons.clear_rounded),
                         ),
                     ],
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                sliver: SliverToBoxAdapter(
+                  child: SegmentedButton<HistoryCategory>(
+                    segments: const [
+                      ButtonSegment(
+                        value: HistoryCategory.all,
+                        label: Text('全部'),
+                      ),
+                      ButtonSegment(
+                        value: HistoryCategory.generation,
+                        label: Text('生成'),
+                      ),
+                      ButtonSegment(
+                        value: HistoryCategory.tool,
+                        label: Text('工具'),
+                      ),
+                    ],
+                    selected: {widget.controller.category},
+                    onSelectionChanged: (value) =>
+                        widget.controller.setCategory(value.first),
                   ),
                 ),
               ),

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.15.13 - 2026-07-29
+
+- 修复导演工具结果不刷新到作品页：[`ImageToolsController`](novelai_canvas/lib/presentation/controllers/image_tools_controller.dart:14) 注入 `HistoryController`，保存后调用 `load()` 刷新作品列表。
+- 作品页新增分类过滤：[`HistoryController`](novelai_canvas/lib/presentation/controllers/history_controller.dart:10) 新增 `HistoryCategory` 枚举（全部/生成/工具），作品页搜索栏下方添加 `SegmentedButton` 切换分类。导演工具结果 model 为 `director-tool`，与普通生成结果分开。
+
 ## 1.15.12 - 2026-07-29
 
 - 导演工具结果保存到作品历史：[`ImageToolsController._run()`](novelai_canvas/lib/presentation/controllers/image_tools_controller.dart:188) 成功后构造 `GenerationTask`（status=completed）并保存到 `GenerationHistoryRepository`，结果出现在作品页。

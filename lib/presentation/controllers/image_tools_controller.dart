@@ -13,21 +13,25 @@ import '../../domain/entities/director_emotion.dart';
 import '../../domain/entities/generation_task.dart';
 import '../../domain/repositories/generation_history_repository.dart';
 import '../../domain/repositories/image_tools_repository.dart';
+import 'history_controller.dart';
 
 class ImageToolsController extends ChangeNotifier {
   ImageToolsController({
     required ImageToolsRepository repository,
     required GenerationImageStore imageStore,
     required GenerationHistoryRepository historyRepository,
+    required HistoryController historyController,
     Uuid uuid = const Uuid(),
   }) : _repository = repository,
        _imageStore = imageStore,
        _historyRepository = historyRepository,
+       _historyController = historyController,
        _uuid = uuid;
 
   final ImageToolsRepository _repository;
   final GenerationImageStore _imageStore;
   final GenerationHistoryRepository _historyRepository;
+  final HistoryController _historyController;
   final Uuid _uuid;
 
   String? sourceImagePath;
@@ -233,6 +237,7 @@ class ImageToolsController extends ChangeNotifier {
         anlasCost: anlasCost,
       );
       await _historyRepository.save(task);
+      await _historyController.load();
     } catch (error) {
       errorMessage = friendlyErrorMessage(error);
     } finally {

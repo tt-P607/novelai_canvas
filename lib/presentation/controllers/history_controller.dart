@@ -22,6 +22,7 @@ class HistoryController extends ChangeNotifier {
   bool loading = false;
   String query = '';
   String? errorMessage;
+  HistoryCategory category = HistoryCategory.all;
 
   Future<void> load({String? query}) async {
     if (query != null) this.query = query;
@@ -29,13 +30,25 @@ class HistoryController extends ChangeNotifier {
     errorMessage = null;
     notifyListeners();
     try {
-      tasks = await _repository.list(query: this.query);
+      final all = await _repository.list(query: this.query);
+      tasks = switch (category) {
+        HistoryCategory.all => all,
+        HistoryCategory.generation =>
+          all.where((t) => !t.spec.model.startsWith('director-')).toList(),
+        HistoryCategory.tool =>
+          all.where((t) => t.spec.model.startsWith('director-')).toList(),
+      };
     } catch (error) {
       errorMessage = error.toString();
     } finally {
       loading = false;
       notifyListeners();
     }
+  }
+
+  void setCategory(HistoryCategory value) {
+    category = value;
+    load();
   }
 
   Future<void> toggleFavorite(String id) async {
@@ -74,3 +87,5 @@ class HistoryController extends ChangeNotifier {
     super.dispose();
   }
 }
+
+enum HistoryCategory { all, generation, tool }

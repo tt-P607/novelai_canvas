@@ -282,6 +282,7 @@ Future<void> _registerControllers() async {
       repository: getIt(),
       imageStore: getIt(),
       historyRepository: getIt(),
+      historyController: getIt(),
     ),
   );
   getIt.registerLazySingleton(
