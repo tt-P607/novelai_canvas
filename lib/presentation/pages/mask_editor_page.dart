@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -52,8 +53,14 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
   /// Whether the magnifier loupe is enabled.
   bool _magnifier = true;
 
-  /// Decoded source image for the magnifier's CustomPainter.
-  ui.Image? _sourceUiImage;
+  /// GlobalKey for the RepaintBoundary that wraps source image + mask overlay.
+  final GlobalKey _boundaryKey = GlobalKey();
+
+  /// Last captured screenshot of the canvas (source image + mask blocks).
+  ui.Image? _capturedImage;
+
+  /// Throttle flag so we don't capture more than ~30fps.
+  bool _capturing = false;
 
   @override
   void initState() {
@@ -61,19 +68,11 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
     _loadSourceSize();
   }
 
-  /// The mask must match the source image pixel-for-pixel; the block grid is
-  /// derived from the real image size so blocks line up with the VAE latents.
   Future<void> _loadSourceSize() async {
     final size = await readImageSize(widget.sourceImagePath);
     if (!mounted || size == null) return;
-    // Decode the image into a ui.Image for the magnifier painter.
-    final bytes = await File(widget.sourceImagePath).readAsBytes();
-    final codec = await ui.instantiateImageCodec(bytes);
-    final frame = await codec.getNextFrame();
-    if (!mounted) return;
     setState(() {
       _sourceSize = size;
-      _sourceUiImage = frame.image;
       _blocksX = math.max(1, size.$1 ~/ 8);
       _blocksY = math.max(1, size.$2 ~/ 8);
       _blocks = List<bool>.filled(_blocksX * _blocksY, false);
@@ -81,6 +80,28 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
   }
 
   bool get _hasSelection => _blocks.contains(true);
+
+  /// Captures the current canvas (source image + mask overlay) as a ui.Image
+  /// for the magnifier. Throttled to avoid excessive captures.
+  Future<void> _captureCanvas() async {
+    if (_capturing) return;
+    _capturing = true;
+    try {
+      final boundary =
+          _boundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null || boundary.size.isEmpty) return;
+      // Capture at device pixel ratio for crisp output.
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      final image = await boundary.toImage(pixelRatio: dpr);
+      if (!mounted) return;
+      setState(() => _capturedImage = image);
+    } catch (_) {
+      // Non-fatal: magnifier just won't update this frame.
+    } finally {
+      _capturing = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -135,8 +156,10 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                         _pushUndo();
                         _paintAt(details.localPosition, constraints.biggest);
                       },
-                      onPanUpdate: (details) =>
-                          _paintAt(details.localPosition, constraints.biggest),
+                      onPanUpdate: (details) {
+                        _paintAt(details.localPosition, constraints.biggest);
+                        _captureCanvas();
+                      },
                       onPanEnd: (_) => setState(() {
                         _cursor = null;
                         _cursorPixel = null;
@@ -144,43 +167,45 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          GestureDetector(
-                            onDoubleTap: () => FullscreenImagePreview.showFile(
-                              context,
-                              widget.sourceImagePath,
-                            ),
-                            // The AspectRatio above matches the source, so
-                            // image pixels and block coordinates share one
-                            // grid.
-                            child: Image.file(
-                              File(widget.sourceImagePath),
-                              fit: BoxFit.fill,
-                            ),
-                          ),
+                          // Wrap source image + mask overlay in a single
+                          // RepaintBoundary so we can capture the combined
+                          // rendering for the magnifier.
                           RepaintBoundary(
-                            child: CustomPaint(
-                              painter: _BlockMaskPainter(
-                                blocks: _blocks,
-                                blocksX: _blocksX,
-                                blocksY: _blocksY,
-                                cursor: _cursor,
-                                penSize: _penSize,
-                              ),
+                            key: _boundaryKey,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                GestureDetector(
+                                  onDoubleTap: () =>
+                                      FullscreenImagePreview.showFile(
+                                        context,
+                                        widget.sourceImagePath,
+                                      ),
+                                  child: Image.file(
+                                    File(widget.sourceImagePath),
+                                    fit: BoxFit.fill,
+                                  ),
+                                ),
+                                CustomPaint(
+                                  painter: _BlockMaskPainter(
+                                    blocks: _blocks,
+                                    blocksX: _blocksX,
+                                    blocksY: _blocksY,
+                                    cursor: _cursor,
+                                    penSize: _penSize,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           if (_magnifier &&
                               _cursorPixel != null &&
-                              _sourceUiImage != null &&
+                              _capturedImage != null &&
                               _canvasSize != null)
                             _Magnifier(
-                              image: _sourceUiImage!,
+                              image: _capturedImage!,
                               position: _cursorPixel!,
                               canvasSize: _canvasSize!,
-                              blocks: _blocks,
-                              blocksX: _blocksX,
-                              blocksY: _blocksY,
-                              cursor: _cursor,
-                              penSize: _penSize,
                             ),
                         ],
                       ),
@@ -333,7 +358,6 @@ class _BlockMaskPainter extends CustomPainter {
         if (!on(x, y)) continue;
         final rect = Rect.fromLTWH(x * cellW, y * cellH, cellW, cellH);
         canvas.drawRect(rect, fill);
-        // Stepped outline: draw the edge only where the neighbour is off.
         if (!on(x, y - 1)) {
           canvas.drawLine(rect.topLeft, rect.topRight, edge);
         }
@@ -370,24 +394,21 @@ class _BlockMaskPainter extends CustomPainter {
       oldDelegate.penSize != penSize;
 }
 
-/// A circular magnifier loupe showing the zoomed-in source image directly
-/// under the finger, positioned above the finger so it is never occluded.
+/// A circular magnifier that shows a zoomed-in screenshot of the canvas
+/// (source image + mask overlay) at the finger position.
 ///
-/// Uses [Canvas.drawImageRect] to crop a small region of the source image
-/// around the finger position and draw it scaled-up inside the loupe circle.
+/// Uses [RepaintBoundary.toImage] to capture the actual rendered pixels, so
+/// the magnified content is pixel-perfect aligned with what the user sees —
+/// no coordinate math, no re-drawing, just a crop and scale of the real
+/// thing.
 class _Magnifier extends StatelessWidget {
   const _Magnifier({
     required this.image,
     required this.position,
     required this.canvasSize,
-    required this.blocks,
-    required this.blocksX,
-    required this.blocksY,
-    required this.cursor,
-    required this.penSize,
   });
 
-  /// The decoded source image.
+  /// The captured screenshot of the canvas (source image + mask overlay).
   final ui.Image image;
 
   /// Finger position in canvas (local) coordinates.
@@ -395,15 +416,6 @@ class _Magnifier extends StatelessWidget {
 
   /// The render size of the canvas (the AspectRatio child).
   final Size canvasSize;
-
-  /// Mask block selection, same as the main painter.
-  final List<bool> blocks;
-  final int blocksX;
-  final int blocksY;
-
-  /// Cursor in block coordinates and brush size, for the brush ring overlay.
-  final Offset? cursor;
-  final double penSize;
 
   static const double _diameter = 120;
   static const double _zoom = 2.5;
@@ -421,14 +433,15 @@ class _Magnifier extends StatelessWidget {
     var dy = position.dy - _diameter - _offsetAbove;
     if (dy < 0) dy = position.dy + _offsetAbove;
 
-    // The source image fills the canvas with BoxFit.fill, so canvas coords
-    // map to image pixels via a simple scale.
+    // The screenshot was captured at device pixel ratio, so its pixel
+    // dimensions may differ from the logical canvas size. We need to map
+    // from canvas logical coords to screenshot pixel coords.
     final scaleX = image.width / canvasSize.width;
     final scaleY = image.height / canvasSize.height;
 
-    // The crop region in image pixel coordinates, centered on the finger.
-    final cropW = (_diameter / _zoom * scaleX);
-    final cropH = (_diameter / _zoom * scaleY);
+    // Crop region in screenshot pixel coordinates, centered on finger.
+    final cropW = _diameter / _zoom * scaleX;
+    final cropH = _diameter / _zoom * scaleY;
     final cropX = (position.dx * scaleX - cropW / 2).clamp(
       0.0,
       (image.width - cropW).clamp(0.0, double.infinity),
@@ -465,13 +478,6 @@ class _Magnifier extends StatelessWidget {
                 image: image,
                 srcRect: Rect.fromLTWH(cropX, cropY, cropW, cropH),
                 dstSize: _diameter,
-                position: position,
-                canvasSize: canvasSize,
-                blocks: blocks,
-                blocksX: blocksX,
-                blocksY: blocksY,
-                cursor: cursor,
-                penSize: penSize,
               ),
             ),
           ),
@@ -486,90 +492,40 @@ class _MagnifierPainter extends CustomPainter {
     required this.image,
     required this.srcRect,
     required this.dstSize,
-    required this.position,
-    required this.canvasSize,
-    required this.blocks,
-    required this.blocksX,
-    required this.blocksY,
-    required this.cursor,
-    required this.penSize,
   });
 
   final ui.Image image;
   final Rect srcRect;
   final double dstSize;
-  final Offset position;
-  final Size canvasSize;
-  final List<bool> blocks;
-  final int blocksX;
-  final int blocksY;
-  final Offset? cursor;
-  final double penSize;
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Draw the zoomed crop of the source image into the full circle.
-    final dstRect = Rect.fromLTWH(0, 0, dstSize, dstSize);
-    canvas.drawImageRect(image, srcRect, dstRect, Paint());
+    // Draw the zoomed crop of the screenshot into the full circle.
+    canvas.drawImageRect(
+      image,
+      srcRect,
+      Rect.fromLTWH(0, 0, dstSize, dstSize),
+      Paint(),
+    );
 
-    // The scale from canvas coords to loupe coords.
-    final canvasToLoupeX = dstSize / srcRect.width;
-    final canvasToLoupeY = dstSize / srcRect.height;
-    // The offset of the crop region's top-left in canvas coords.
-    final cropOriginX = srcRect.left / (image.width / canvasSize.width);
-    final cropOriginY = srcRect.top / (image.height / canvasSize.height);
-
-    // Draw selected mask blocks within the loupe.
-    final cellW = canvasSize.width / blocksX;
-    final cellH = canvasSize.height / blocksY;
-    final fill = Paint()..color = const Color(0x594F6BD8);
-
-    bool on(int x, int y) =>
-        x >= 0 &&
-        x < blocksX &&
-        y >= 0 &&
-        y < blocksY &&
-        blocks[y * blocksX + x];
-
-    for (var y = 0; y < blocksY; y++) {
-      for (var x = 0; x < blocksX; x++) {
-        if (!on(x, y)) continue;
-        final blockCanvasX = x * cellW;
-        final blockCanvasY = y * cellH;
-        // Convert to loupe coords.
-        final lx = (blockCanvasX - cropOriginX) * canvasToLoupeX;
-        final ly = (blockCanvasY - cropOriginY) * canvasToLoupeY;
-        final lw = cellW * canvasToLoupeX;
-        final lh = cellH * canvasToLoupeY;
-        // Only draw if within the loupe bounds.
-        if (lx + lw < 0 || ly + lh < 0 || lx > dstSize || ly > dstSize) {
-          continue;
-        }
-        canvas.drawRect(Rect.fromLTWH(lx, ly, lw, lh), fill);
-      }
-    }
-
-    // Draw the brush ring at the finger position (center of the loupe).
-    final cursorPosition = cursor;
-    if (cursorPosition != null) {
-      final cursorCanvasX = cursorPosition.dx * cellW;
-      final cursorCanvasY = cursorPosition.dy * cellH;
-      final ringCenterX = (cursorCanvasX - cropOriginX) * canvasToLoupeX;
-      final ringCenterY = (cursorCanvasY - cropOriginY) * canvasToLoupeY;
-      final ringRadius = (penSize / 2 * cellW) * canvasToLoupeX;
-      final ring = Paint()
-        ..color = Colors.white.withValues(alpha: 0.9)
-        ..strokeWidth = 1.6
-        ..style = PaintingStyle.stroke;
-      canvas.drawCircle(Offset(ringCenterX, ringCenterY), ringRadius, ring);
-    }
+    // Crosshair at center so user knows where the finger is.
+    final center = Offset(dstSize / 2, dstSize / 2);
+    final crossPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.6)
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(center.dx - 8, center.dy),
+      Offset(center.dx + 8, center.dy),
+      crossPaint,
+    );
+    canvas.drawLine(
+      Offset(center.dx, center.dy - 8),
+      Offset(center.dx, center.dy + 8),
+      crossPaint,
+    );
   }
 
   @override
   bool shouldRepaint(covariant _MagnifierPainter oldDelegate) =>
-      oldDelegate.position != position ||
-      oldDelegate.image != image ||
-      oldDelegate.blocks != blocks ||
-      oldDelegate.cursor != cursor ||
-      oldDelegate.penSize != penSize;
+      oldDelegate.image != image || oldDelegate.srcRect != srcRect;
 }
