@@ -4,7 +4,7 @@
 
 - 画幅自动对齐 64 像素：[`updateSize`](novelai_canvas/lib/presentation/controllers/generation_controller.dart:368) 和 `_adoptSourceImageSize` 统一走 `_align64`，预设选择、源图导入和自定义输入全部自动对齐到 64 的倍数。上传非标准尺寸图片进行图生图/局部重绘时，画幅不再出现静默空响应问题。
 - 删除标签建议功能：移除 `TagSuggestion` 实体、原生与网关的 suggest-tags / annotate-image 服务、DTO、请求构建器及依赖注入注册。
-- 图像工具新增压缩画幅工具：纯客户端操作，将源图用高质量 cubic 重采样缩放到最近的 64 像素对齐尺寸，不消耗 Anlas、不走网络。
+- 图像工具新增压缩画幅工具：纯客户端操作，不消耗 Anlas、不走网络。提供两种模式：**对齐 64**——仅对齐到最近 64 像素倍数；**压到免费**——等比缩放到不超过 1,048,576 像素（Opus 免费范围上限）的 64 对齐尺寸。新增 [`CompressMode`](novelai_canvas/lib/domain/repositories/image_tools_repository.dart:7) 枚举。
 
 ## 1.15.7 - 2026-07-29
 
