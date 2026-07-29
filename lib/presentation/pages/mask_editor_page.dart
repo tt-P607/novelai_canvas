@@ -42,6 +42,15 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
   /// Cursor position in block coordinates while painting, for the brush ring.
   Offset? _cursor;
 
+  /// Cursor position in local pixel coordinates for the magnifier.
+  Offset? _cursorPixel;
+
+  /// Canvas render size, captured during layout for the magnifier.
+  Size? _canvasSize;
+
+  /// Whether the magnifier loupe is enabled.
+  bool _magnifier = true;
+
   @override
   void initState() {
     super.initState();
@@ -109,43 +118,57 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
               child: AspectRatio(
                 aspectRatio: size.$1 / size.$2,
                 child: LayoutBuilder(
-                  builder: (context, constraints) => GestureDetector(
-                    onPanStart: (details) {
-                      _pushUndo();
-                      _paintAt(details.localPosition, constraints.biggest);
-                    },
-                    onPanUpdate: (details) =>
-                        _paintAt(details.localPosition, constraints.biggest),
-                    onPanEnd: (_) => setState(() => _cursor = null),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        GestureDetector(
-                          onDoubleTap: () => FullscreenImagePreview.showFile(
-                            context,
-                            widget.sourceImagePath,
-                          ),
-                          // The AspectRatio above matches the source, so
-                          // image pixels and block coordinates share one grid.
-                          child: Image.file(
-                            File(widget.sourceImagePath),
-                            fit: BoxFit.fill,
-                          ),
-                        ),
-                        RepaintBoundary(
-                          child: CustomPaint(
-                            painter: _BlockMaskPainter(
-                              blocks: _blocks,
-                              blocksX: _blocksX,
-                              blocksY: _blocksY,
-                              cursor: _cursor,
-                              penSize: _penSize,
+                  builder: (context, constraints) {
+                    _canvasSize = constraints.biggest;
+                    return GestureDetector(
+                      onPanStart: (details) {
+                        _pushUndo();
+                        _paintAt(details.localPosition, constraints.biggest);
+                      },
+                      onPanUpdate: (details) =>
+                          _paintAt(details.localPosition, constraints.biggest),
+                      onPanEnd: (_) => setState(() {
+                        _cursor = null;
+                        _cursorPixel = null;
+                      }),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          GestureDetector(
+                            onDoubleTap: () => FullscreenImagePreview.showFile(
+                              context,
+                              widget.sourceImagePath,
+                            ),
+                            // The AspectRatio above matches the source, so
+                            // image pixels and block coordinates share one
+                            // grid.
+                            child: Image.file(
+                              File(widget.sourceImagePath),
+                              fit: BoxFit.fill,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
+                          RepaintBoundary(
+                            child: CustomPaint(
+                              painter: _BlockMaskPainter(
+                                blocks: _blocks,
+                                blocksX: _blocksX,
+                                blocksY: _blocksY,
+                                cursor: _cursor,
+                                penSize: _penSize,
+                              ),
+                            ),
+                          ),
+                          if (_magnifier && _cursorPixel != null)
+                            _Magnifier(
+                              sourcePath: widget.sourceImagePath,
+                              position: _cursorPixel!,
+                              canvasSize: _canvasSize!,
+                              sourceSize: size,
+                            ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -176,6 +199,16 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                     ),
                   ),
                   Text(_penSize.round().toString()),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    tooltip: _magnifier ? '关闭放大镜' : '开启放大镜',
+                    onPressed: () => setState(() => _magnifier = !_magnifier),
+                    icon: Icon(
+                      _magnifier
+                          ? Icons.zoom_in_rounded
+                          : Icons.zoom_out_rounded,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -204,6 +237,7 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
     final maxY = math.min(_blocksY - 1, (by + radius).ceil());
     setState(() {
       _cursor = Offset(bx, by);
+      _cursorPixel = local;
       for (var y = minY; y <= maxY; y++) {
         for (var x = minX; x <= maxX; x++) {
           final dx = x + 0.5 - bx;
@@ -317,4 +351,99 @@ class _BlockMaskPainter extends CustomPainter {
       oldDelegate.blocks != blocks ||
       oldDelegate.cursor != cursor ||
       oldDelegate.penSize != penSize;
+}
+
+/// A circular magnifier loupe that follows the finger during mask painting.
+///
+/// Shows a zoomed-in view of the source image at the finger position, offset
+/// upward so the finger never occludes the magnified content.
+class _Magnifier extends StatelessWidget {
+  const _Magnifier({
+    required this.sourcePath,
+    required this.position,
+    required this.canvasSize,
+    required this.sourceSize,
+  });
+
+  final String sourcePath;
+  final Offset position;
+  final Size canvasSize;
+  final (int, int) sourceSize;
+
+  static const double _diameter = 120;
+  static const double _zoom = 2.5;
+  static const double _offsetAbove = 80;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    // Position the loupe above the finger, clamped within the canvas.
+    final dx = (position.dx - _diameter / 2).clamp(
+      0.0,
+      (canvasSize.width - _diameter).clamp(0.0, double.infinity),
+    );
+    var dy = position.dy - _diameter - _offsetAbove;
+    if (dy < 0) dy = position.dy + _offsetAbove;
+
+    // The source image fills the canvas with BoxFit.fill, so the scale
+    // from canvas coords to image coords is:
+    final scaleX = sourceSize.$1 / canvasSize.width;
+    final scaleY = sourceSize.$2 / canvasSize.height;
+
+    // The crop region in image pixel coordinates around the finger.
+    final cropW = (_diameter / _zoom * scaleX).round();
+    final cropH = (_diameter / _zoom * scaleY).round();
+    final cropX = (position.dx * scaleX - cropW / 2).round();
+    final cropY = (position.dy * scaleY - cropH / 2).round();
+
+    return Positioned(
+      left: dx,
+      top: dy,
+      child: IgnorePointer(
+        child: Container(
+          width: _diameter,
+          height: _diameter,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: colors.onSurface.withValues(alpha: 0.4),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: OverflowBox(
+              maxWidth: _diameter * _zoom,
+              maxHeight: _diameter * _zoom,
+              child: Transform.translate(
+                offset: Offset(
+                  -(_diameter * _zoom / 2 -
+                      _diameter / 2 -
+                      (cropX / scaleX * _zoom)),
+                  -(_diameter * _zoom / 2 -
+                      _diameter / 2 -
+                      (cropY / scaleY * _zoom)),
+                ),
+                child: SizedBox(
+                  width: sourceSize.$1.toDouble() * _zoom,
+                  height: sourceSize.$2.toDouble() * _zoom,
+                  child: Image.file(
+                    File(sourcePath),
+                    fit: BoxFit.fill,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

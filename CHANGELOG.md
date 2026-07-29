@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.15.9 - 2026-07-29
+
+- 自动预处理输入图：上传图片时如果尺寸不是 64 的倍数，客户端自动用 cubic 重采样缩放到最近的 64 对齐尺寸并保存为新文件作为源图，保证局部重绘输入输出画幅完全一致。[`_adoptSourceImageSize`](novelai_canvas/lib/presentation/controllers/generation_controller.dart:435) 新增 [`_autoResizeSource`](novelai_canvas/lib/presentation/controllers/generation_controller.dart:460) 方法。
+- 遮罩编辑器新增放大镜功能：手指绘制时在手指上方显示圆形放大镜（2.5x），避免手指遮挡视线。可通过工具栏按钮开关。新增 [`_Magnifier`](novelai_canvas/lib/presentation/pages/mask_editor_page.dart:357) widget。
+
 ## 1.15.8 - 2026-07-29
 
 - 画幅自动对齐 64 像素：[`updateSize`](novelai_canvas/lib/presentation/controllers/generation_controller.dart:368) 和 `_adoptSourceImageSize` 统一走 `_align64`，预设选择、源图导入和自定义输入全部自动对齐到 64 的倍数。上传非标准尺寸图片进行图生图/局部重绘时，画幅不再出现静默空响应问题。

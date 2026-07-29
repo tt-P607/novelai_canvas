@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:developer';
+import 'dart:io';
 import 'dart:math' hide log;
 
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/errors/error_message.dart';
@@ -432,9 +436,49 @@ class GenerationController extends ChangeNotifier {
     final size = await readImageSize(path);
     if (size == null || sourceImagePath != path) return;
     sourceImageSize = size;
-    width = _align64(size.$1);
-    height = _align64(size.$2);
+    final alignedW = _align64(size.$1);
+    final alignedH = _align64(size.$2);
+    if (alignedW != size.$1 || alignedH != size.$2) {
+      // Source image is not 64-aligned. Auto-resize it so inpaint
+      // masks and output dimensions stay perfectly consistent.
+      final resized = await _autoResizeSource(path, alignedW, alignedH);
+      if (resized != null) {
+        sourceImagePath = resized;
+        sourceImageSize = (alignedW, alignedH);
+      }
+    }
+    width = alignedW;
+    height = alignedH;
     notifyListeners();
+  }
+
+  /// Resizes the source image to 64-aligned dimensions and saves the result
+  /// to the app's support directory. Returns the new path, or null on
+  /// failure.
+  Future<String?> _autoResizeSource(
+    String originalPath,
+    int targetW,
+    int targetH,
+  ) async {
+    try {
+      final sourceBytes = await File(originalPath).readAsBytes();
+      final result = await compute(_resizeSourceImage, (
+        sourceBytes,
+        targetW,
+        targetH,
+      ));
+      final support = await getApplicationSupportDirectory();
+      final dir = Directory(p.join(support.path, 'resized_sources'));
+      await dir.create(recursive: true);
+      final newPath = p.join(
+        dir.path,
+        'src_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await File(newPath).writeAsBytes(result, flush: true);
+      return newPath;
+    } catch (_) {
+      return null;
+    }
   }
 
   void setMaskImage(String? path) {
@@ -796,4 +840,17 @@ class GenerationController extends ChangeNotifier {
     unawaited(_taskSubscription.cancel());
     super.dispose();
   }
+}
+
+Uint8List _resizeSourceImage((Uint8List, int, int) args) {
+  final (sourceBytes, targetW, targetH) = args;
+  final decoded = img.decodeImage(sourceBytes);
+  if (decoded == null) throw FormatException('无法解码图片。');
+  final resized = img.copyResize(
+    decoded,
+    width: targetW,
+    height: targetH,
+    interpolation: img.Interpolation.cubic,
+  );
+  return Uint8List.fromList(img.encodePng(resized));
 }
