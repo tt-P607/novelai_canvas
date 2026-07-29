@@ -140,6 +140,11 @@ class GenerationController extends ChangeNotifier {
 
   /// Pixel dimensions of [sourceImagePath], once decoded.
   (int, int)? sourceImageSize;
+
+  /// Set when the source image was auto-resized to 64-alignment; the UI
+  /// should show a one-shot notice and then clear it.
+  String? resizeNotice;
+
   bool stream;
   bool addOriginalImage = true;
   List<CharacterPrompt> characterPrompts = const [];
@@ -439,12 +444,12 @@ class GenerationController extends ChangeNotifier {
     final alignedW = _align64(size.$1);
     final alignedH = _align64(size.$2);
     if (alignedW != size.$1 || alignedH != size.$2) {
-      // Source image is not 64-aligned. Auto-resize it so inpaint
-      // masks and output dimensions stay perfectly consistent.
       final resized = await _autoResizeSource(path, alignedW, alignedH);
       if (resized != null) {
         sourceImagePath = resized;
         sourceImageSize = (alignedW, alignedH);
+        resizeNotice =
+            '源图 ${size.$1}×${size.$2} 非 64 对齐，已自动缩放为 $alignedW×$alignedH';
       }
     }
     width = alignedW;

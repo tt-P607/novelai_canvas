@@ -99,6 +99,11 @@ class _CreationPageState extends State<CreationPage> {
     _syncField(_seedController, controller.seed.toString());
     _syncField(_customWidthController, controller.width.toString());
     _syncField(_customHeightController, controller.height.toString());
+    final notice = controller.resizeNotice;
+    if (notice != null) {
+      controller.resizeNotice = null;
+      showCompactSnackBar(context, icon: Icons.crop_rounded, message: notice);
+    }
   }
 
   void _syncField(TextEditingController field, String value) {
