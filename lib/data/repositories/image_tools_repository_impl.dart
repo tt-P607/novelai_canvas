@@ -8,29 +8,22 @@ import '../../core/errors/app_exception.dart';
 import '../../core/network/backend_mode.dart';
 import '../../domain/entities/generated_image.dart';
 import '../../domain/entities/image_generation_result.dart';
-import '../../domain/entities/tag_suggestion.dart';
 import '../../domain/repositories/image_tools_repository.dart';
 import '../api/gateway/dto/gateway_director_request_dto.dart';
-import '../api/gateway/dto/gateway_tag_suggestion_request_dto.dart';
 import '../api/gateway/dto/gateway_upscale_request_dto.dart';
 import '../api/gateway/services/gateway_director_services.dart';
-import '../api/gateway/services/gateway_tag_suggestion_service.dart';
 import '../api/gateway/services/gateway_upscale_service.dart';
 import '../api/native/dto/native_director_request_dto.dart';
-import '../api/native/dto/native_tag_suggestion_request_dto.dart';
 import '../api/native/dto/native_upscale_request_dto.dart';
 import '../api/native/services/native_director_service.dart';
-import '../api/native/services/native_tag_suggestion_service.dart';
 import '../api/native/services/native_upscale_service.dart';
 
 class ImageToolsRepositoryImpl implements ImageToolsRepository {
   ImageToolsRepositoryImpl({
     required BackendMode Function() backendModeProvider,
     required NativeUpscaleService nativeUpscaleService,
-    required NativeTagSuggestionService nativeTagSuggestionService,
     required NativeDirectorService nativeDirectorService,
     required GatewayUpscaleService gatewayUpscaleService,
-    required GatewayTagSuggestionService gatewayTagSuggestionService,
     required GatewayDeclutterService gatewayDeclutterService,
     required GatewayBackgroundRemovalService gatewayBackgroundRemovalService,
     required GatewayLineartService gatewayLineartService,
@@ -40,10 +33,8 @@ class ImageToolsRepositoryImpl implements ImageToolsRepository {
     Dio? downloadClient,
   }) : _backendModeProvider = backendModeProvider,
        _nativeUpscaleService = nativeUpscaleService,
-       _nativeTagSuggestionService = nativeTagSuggestionService,
        _nativeDirectorService = nativeDirectorService,
        _gatewayUpscaleService = gatewayUpscaleService,
-       _gatewayTagSuggestionService = gatewayTagSuggestionService,
        _gatewayDirectorServices = {
          DirectorTool.declutter: gatewayDeclutterService,
          DirectorTool.backgroundRemoval: gatewayBackgroundRemovalService,
@@ -56,10 +47,8 @@ class ImageToolsRepositoryImpl implements ImageToolsRepository {
 
   final BackendMode Function() _backendModeProvider;
   final NativeUpscaleService _nativeUpscaleService;
-  final NativeTagSuggestionService _nativeTagSuggestionService;
   final NativeDirectorService _nativeDirectorService;
   final GatewayUpscaleService _gatewayUpscaleService;
-  final GatewayTagSuggestionService _gatewayTagSuggestionService;
   final Map<DirectorTool, GatewayDirectorEndpointService>
   _gatewayDirectorServices;
   final Dio _downloadClient;
@@ -86,19 +75,6 @@ class ImageToolsRepositoryImpl implements ImageToolsRepository {
     };
     return _result(result);
   }
-
-  @override
-  Future<List<TagSuggestion>> suggestTags({
-    required String prompt,
-    required String model,
-  }) => switch (_backendModeProvider()) {
-    BackendMode.native => _nativeTagSuggestionService.suggest(
-      NativeTagSuggestionRequestDto(prompt: prompt, model: model),
-    ),
-    BackendMode.gateway => _gatewayTagSuggestionService.suggest(
-      GatewayTagSuggestionRequestDto(prompt: prompt, model: model),
-    ),
-  };
 
   @override
   Future<ImageToolResult> applyDirectorTool({

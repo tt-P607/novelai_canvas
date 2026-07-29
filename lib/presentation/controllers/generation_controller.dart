@@ -366,8 +366,8 @@ class GenerationController extends ChangeNotifier {
   }
 
   void updateSize({required int width, required int height}) {
-    this.width = width.clamp(64, 1600);
-    this.height = height.clamp(64, 1600);
+    this.width = _align64(width);
+    this.height = _align64(height);
     _saveParams();
     notifyListeners();
   }
@@ -432,8 +432,8 @@ class GenerationController extends ChangeNotifier {
     final size = await readImageSize(path);
     if (size == null || sourceImagePath != path) return;
     sourceImageSize = size;
-    width = size.$1;
-    height = size.$2;
+    width = _align64(size.$1);
+    height = _align64(size.$2);
     notifyListeners();
   }
 

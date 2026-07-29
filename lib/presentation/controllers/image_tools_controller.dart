@@ -1,11 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:uuid/uuid.dart';
 
 import '../../core/errors/error_message.dart';
 import '../../core/storage/generation_image_store.dart';
 import '../../core/storage/image_size_reader.dart';
 import '../../domain/entities/director_emotion.dart';
-import '../../domain/entities/tag_suggestion.dart';
 import '../../domain/repositories/image_tools_repository.dart';
 
 class ImageToolsController extends ChangeNotifier {
@@ -33,7 +35,6 @@ class ImageToolsController extends ChangeNotifier {
   Uint8List? resultBytes;
   String? resultPath;
   int? anlasCost;
-  List<TagSuggestion> suggestions = const [];
 
   Future<void> setSourceImage(String? path) async {
     sourceImagePath = path;
@@ -87,20 +88,40 @@ class ImageToolsController extends ChangeNotifier {
     ),
   );
 
-  Future<void> suggestTags({required String model}) async {
-    if (prompt.trim().isEmpty) {
-      errorMessage = '请输入用于标签建议的提示词。';
+  /// Compresses the source image to a 64-aligned target size using LANCZOS
+  /// resampling. Pure client-side — no network call, no Anlas cost.
+  Future<void> compressImage() async {
+    final path = sourceImagePath;
+    if (path == null || path.isEmpty) {
+      errorMessage = '请先选择源图片。';
+      notifyListeners();
+      return;
+    }
+    final srcW = width;
+    final srcH = height;
+    final dstW = _align64(srcW);
+    final dstH = _align64(srcH);
+    if (dstW == srcW && dstH == srcH) {
+      errorMessage = '当前画幅已对齐 64 像素，无需压缩。';
       notifyListeners();
       return;
     }
     isRunning = true;
     errorMessage = null;
+    resultBytes = null;
+    resultPath = null;
+    anlasCost = null;
     notifyListeners();
     try {
-      suggestions = await _repository.suggestTags(
-        prompt: prompt.trim(),
-        model: model,
+      final sourceBytes = await File(path).readAsBytes();
+      final result = await compute(_resizeImage, (sourceBytes, dstW, dstH));
+      final stored = await _imageStore.save(
+        taskId: 'compress_${_uuid.v4()}',
+        bytes: result,
+        extension: 'png',
       );
+      resultBytes = result;
+      resultPath = stored.imagePath;
     } catch (error) {
       errorMessage = friendlyErrorMessage(error);
     } finally {
@@ -108,6 +129,9 @@ class ImageToolsController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  static int _align64(int value) =>
+      ((value.clamp(64, 1600) + 32) ~/ 64 * 64).clamp(64, 1600);
 
   Future<void> useResultAsSource() async {
     final path = resultPath;
@@ -158,4 +182,17 @@ class ImageToolsController extends ChangeNotifier {
     if (path == null || path.isEmpty) throw StateError('请先选择源图片。');
     return path;
   }
+}
+
+Uint8List _resizeImage((Uint8List, int, int) args) {
+  final (sourceBytes, dstW, dstH) = args;
+  final decoded = img.decodeImage(sourceBytes);
+  if (decoded == null) throw FormatException('无法解码图片。');
+  final resized = img.copyResize(
+    decoded,
+    width: dstW,
+    height: dstH,
+    interpolation: img.Interpolation.cubic,
+  );
+  return Uint8List.fromList(img.encodePng(resized));
 }

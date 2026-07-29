@@ -145,7 +145,6 @@ void main() {
       '/ai/generate-image',
       '/ai/generate-image-stream',
       '/ai/augment-image',
-      '/ai/annotate-image',
     ];
     for (final path in imagePaths) {
       await dio.post<Object?>(path);

@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import '../entities/generated_image.dart';
-import '../entities/tag_suggestion.dart';
 
 enum DirectorTool {
   declutter,
@@ -25,11 +24,6 @@ abstract interface class ImageToolsRepository {
     required String imagePath,
     required int width,
     required int height,
-  });
-
-  Future<List<TagSuggestion>> suggestTags({
-    required String prompt,
-    required String model,
   });
 
   Future<ImageToolResult> applyDirectorTool({

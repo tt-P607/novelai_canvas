@@ -302,6 +302,17 @@ class CanvasSizeField extends StatelessWidget {
     if (parsedWidth == null || parsedHeight == null) return;
     if (parsedWidth < 64 || parsedHeight < 64) return;
     if (parsedWidth > 1600 || parsedHeight > 1600) return;
-    onChanged(parsedWidth, parsedHeight);
+    final alignedWidth = _align64(parsedWidth);
+    final alignedHeight = _align64(parsedHeight);
+    if (alignedWidth != parsedWidth) {
+      widthController.text = alignedWidth.toString();
+    }
+    if (alignedHeight != parsedHeight) {
+      heightController.text = alignedHeight.toString();
+    }
+    onChanged(alignedWidth, alignedHeight);
   }
+
+  static int _align64(int value) =>
+      ((value.clamp(64, 1600) + 32) ~/ 64 * 64).clamp(64, 1600);
 }

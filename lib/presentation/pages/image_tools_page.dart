@@ -52,7 +52,7 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
                 const SizedBox(height: 16),
                 _directorCard(),
                 const SizedBox(height: 16),
-                _tagCard(),
+                _compressCard(),
                 if (controller.errorMessage != null) ...[
                   const SizedBox(height: 12),
                   Card(
@@ -312,54 +312,51 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
     ),
   );
 
-  Widget _tagCard() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('标签建议', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          TextField(
-            onChanged: controller.updatePrompt,
-            decoration: const InputDecoration(
-              labelText: '输入提示词，例如 1girl',
-              border: OutlineInputBorder(),
+  Widget _compressCard() {
+    final srcW = controller.width;
+    final srcH = controller.height;
+    final dstW = ((srcW.clamp(64, 1600) + 32) ~/ 64 * 64).clamp(64, 1600);
+    final dstH = ((srcH.clamp(64, 1600) + 32) ~/ 64 * 64).clamp(64, 1600);
+    final needsResize = dstW != srcW || dstH != srcH;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('压缩画幅', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            const Text(
+              '将源图缩放到最近的 64 像素对齐尺寸，使用高质量重采样。'
+              '适用于上传非标准尺寸图片后对齐到 NovelAI 合规画幅。',
             ),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.tonal(
-            onPressed: controller.isRunning
-                ? null
-                : () => controller.suggestTags(model: 'nai-diffusion-3'),
-            child: const Text('获取标签建议'),
-          ),
-          if (controller.suggestions.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: controller.suggestions
-                  .map(
-                    (tag) => InputChip(
-                      label: Text(tag.tag),
-                      avatar: Text('${(tag.confidence * 100).round()}%'),
-                      onPressed: () {
-                        _promptController.text = [
-                          _promptController.text.trim(),
-                          tag.tag,
-                        ].where((value) => value.isNotEmpty).join(', ');
-                        controller.updatePrompt(_promptController.text);
-                      },
-                    ),
-                  )
-                  .toList(),
+            if (controller.sourceImagePath != null) ...[
+              Row(
+                children: [
+                  const Icon(Icons.straighten_rounded, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    needsResize
+                        ? '当前 $srcW × $srcH → 对齐后 $dstW × $dstH'
+                        : '当前 $srcW × $srcH（已对齐，无需压缩）',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            FilledButton.tonalIcon(
+              onPressed: controller.isRunning || !needsResize
+                  ? null
+                  : controller.compressImage,
+              icon: const Icon(Icons.compress_rounded),
+              label: Text(controller.isRunning ? '处理中…' : '压缩画幅'),
             ),
           ],
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Future<void> _pickImage() async {
     final image = await _picker.pickImage(source: ImageSource.gallery);

@@ -9,7 +9,6 @@ import '../../data/api/gateway/services/gateway_director_services.dart';
 import '../../data/api/gateway/services/gateway_image_to_image_service.dart';
 import '../../data/api/gateway/services/gateway_inpaint_service.dart';
 import '../../data/api/gateway/services/gateway_models_service.dart';
-import '../../data/api/gateway/services/gateway_tag_suggestion_service.dart';
 import '../../data/api/gateway/services/gateway_upscale_service.dart';
 import '../../data/api/gateway/services/gateway_vibe_transfer_service.dart';
 import '../../data/api/native/services/native_director_service.dart';
@@ -17,7 +16,6 @@ import '../../data/api/native/services/native_encode_vibe_service.dart';
 import '../../data/api/native/services/native_image_to_image_service.dart';
 import '../../data/api/native/services/native_inpaint_service.dart';
 import '../../data/api/native/services/native_stream_service.dart';
-import '../../data/api/native/services/native_tag_suggestion_service.dart';
 import '../../data/api/native/services/native_text_to_image_service.dart';
 import '../../data/api/native/services/native_upscale_service.dart';
 import '../../data/api/llm/llm_chat_service.dart';
@@ -191,7 +189,6 @@ void _registerApiServices() {
   getIt.registerLazySingleton(() => NativeStreamService(nativeDio));
   getIt.registerLazySingleton(() => NativeEncodeVibeService(nativeDio));
   getIt.registerLazySingleton(() => NativeUpscaleService(nativeDio));
-  getIt.registerLazySingleton(() => NativeTagSuggestionService(nativeDio));
   getIt.registerLazySingleton(() => NativeDirectorService(nativeDio));
   getIt.registerLazySingleton(() => NativeSubscriptionService(nativeDio));
   getIt.registerLazySingleton(() => NativeUserDataService(nativeDio));
@@ -202,7 +199,6 @@ void _registerApiServices() {
   getIt.registerLazySingleton(() => GatewayInpaintService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayVibeTransferService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayUpscaleService(gatewayDio));
-  getIt.registerLazySingleton(() => GatewayTagSuggestionService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayDeclutterService(gatewayDio));
   getIt.registerLazySingleton(
     () => GatewayBackgroundRemovalService(gatewayDio),
@@ -232,10 +228,8 @@ void _registerRepositories() {
       backendModeProvider: () =>
           getIt<AppSettingsController>().settings.backendMode,
       nativeUpscaleService: getIt(),
-      nativeTagSuggestionService: getIt(),
       nativeDirectorService: getIt(),
       gatewayUpscaleService: getIt(),
-      gatewayTagSuggestionService: getIt(),
       gatewayDeclutterService: getIt(),
       gatewayBackgroundRemovalService: getIt(),
       gatewayLineartService: getIt(),
