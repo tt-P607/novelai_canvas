@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.15.12 - 2026-07-29
+
+- 导演工具结果保存到作品历史：[`ImageToolsController._run()`](novelai_canvas/lib/presentation/controllers/image_tools_controller.dart:188) 成功后构造 `GenerationTask`（status=completed）并保存到 `GenerationHistoryRepository`，结果出现在作品页。
+- 导演工具结果新增下载按钮：[`_comparisonCard()`](novelai_canvas/lib/presentation/pages/image_tools_page.dart:79) 添加"保存"按钮，通过 `ImageGallerySaverPlus.saveFile` 保存到系统相册。
+
 ## 1.15.11 - 2026-07-29
 
 - 自动预处理输入图时新增用户提示：当图片尺寸非 64 对齐时，自动缩放后弹出 `showCompactSnackBar` 提示"源图 WxH 非 64 对齐，已自动缩放为 WxH"。

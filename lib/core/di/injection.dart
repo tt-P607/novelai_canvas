@@ -278,7 +278,11 @@ Future<void> _registerControllers() async {
     () => HistoryController(repository: getIt(), queue: getIt()),
   );
   getIt.registerLazySingleton(
-    () => ImageToolsController(repository: getIt(), imageStore: getIt()),
+    () => ImageToolsController(
+      repository: getIt(),
+      imageStore: getIt(),
+      historyRepository: getIt(),
+    ),
   );
   getIt.registerLazySingleton(
     () => AppBackupService(

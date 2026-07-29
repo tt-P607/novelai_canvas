@@ -2,11 +2,13 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../domain/entities/director_emotion.dart';
 import '../../domain/repositories/image_tools_repository.dart';
 import '../controllers/image_tools_controller.dart';
+import '../widgets/compact_snack_bar.dart';
 import '../widgets/fullscreen_image_preview.dart';
 
 class ImageToolsPage extends StatefulWidget {
@@ -133,13 +135,22 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
             ],
           ),
           const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.tonalIcon(
-              onPressed: controller.useResultAsSource,
-              icon: const Icon(Icons.redo_rounded),
-              label: const Text('使用结果继续处理'),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: controller.useResultAsSource,
+                  icon: const Icon(Icons.redo_rounded),
+                  label: const Text('继续处理'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.tonalIcon(
+                onPressed: () => _saveToGallery(context),
+                icon: const Icon(Icons.save_alt_rounded),
+                label: const Text('保存'),
+              ),
+            ],
           ),
         ],
       ),
@@ -414,6 +425,27 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _saveToGallery(BuildContext context) async {
+    final path = controller.resultPath;
+    if (path == null || path.isEmpty) return;
+    try {
+      await ImageGallerySaverPlus.saveFile(path);
+      if (!context.mounted) return;
+      showCompactSnackBar(
+        context,
+        icon: Icons.check_circle_rounded,
+        message: '已保存到相册',
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      showCompactSnackBar(
+        context,
+        icon: Icons.error_outline_rounded,
+        message: '保存失败',
+      );
+    }
   }
 
   Future<void> _pickImage() async {

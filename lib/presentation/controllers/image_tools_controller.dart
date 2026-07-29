@@ -6,22 +6,28 @@ import 'package:image/image.dart' as img;
 import 'package:uuid/uuid.dart';
 
 import '../../core/errors/error_message.dart';
+import '../../core/network/backend_mode.dart';
 import '../../core/storage/generation_image_store.dart';
 import '../../core/storage/image_size_reader.dart';
 import '../../domain/entities/director_emotion.dart';
+import '../../domain/entities/generation_task.dart';
+import '../../domain/repositories/generation_history_repository.dart';
 import '../../domain/repositories/image_tools_repository.dart';
 
 class ImageToolsController extends ChangeNotifier {
   ImageToolsController({
     required ImageToolsRepository repository,
     required GenerationImageStore imageStore,
+    required GenerationHistoryRepository historyRepository,
     Uuid uuid = const Uuid(),
   }) : _repository = repository,
        _imageStore = imageStore,
+       _historyRepository = historyRepository,
        _uuid = uuid;
 
   final ImageToolsRepository _repository;
   final GenerationImageStore _imageStore;
+  final GenerationHistoryRepository _historyRepository;
   final Uuid _uuid;
 
   String? sourceImagePath;
@@ -189,8 +195,9 @@ class ImageToolsController extends ChangeNotifier {
     try {
       final result = await action();
       final bytes = await _repository.materialize(result.image);
+      final taskId = 'tool_${_uuid.v4()}';
       final stored = await _imageStore.save(
-        taskId: 'tool_${_uuid.v4()}',
+        taskId: taskId,
         bytes: bytes,
         extension: GenerationImageStore.extensionForMimeType(
           result.image.mimeType,
@@ -199,6 +206,33 @@ class ImageToolsController extends ChangeNotifier {
       resultBytes = bytes;
       resultPath = stored.imagePath;
       anlasCost = result.anlasCost;
+      // Save to generation history so the result appears in the gallery.
+      final now = DateTime.now();
+      final task = GenerationTask(
+        id: taskId,
+        spec: GenerationSpec(
+          mode: GenerationMode.textToImage,
+          backendMode: BackendMode.native,
+          model: 'director-tool',
+          prompt: _directorGuidance(),
+          negativePrompt: '',
+          width: width,
+          height: height,
+          steps: 0,
+          scale: 5,
+          cfgRescale: 0,
+          sampler: 'k_euler_ancestral',
+          noiseSchedule: 'karras',
+          seed: 0,
+        ),
+        status: GenerationTaskStatus.completed,
+        createdAt: now,
+        updatedAt: now,
+        imagePath: stored.imagePath,
+        thumbnailPath: stored.thumbnailPath,
+        anlasCost: anlasCost,
+      );
+      await _historyRepository.save(task);
     } catch (error) {
       errorMessage = friendlyErrorMessage(error);
     } finally {
