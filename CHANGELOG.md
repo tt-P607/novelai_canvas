@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.7 - 2026-07-29
+
+- 流式生成改回走 Chat SSE 端点：new-api 等 Go 代理不支持 `/v1/images/generations` 的 `stream: true`，但原生支持 `/v1/chat/completions` 的 SSE 透传。流式虽然没有渐进式预览（只有最终结果），但能可靠工作。
+- 删除不再使用的 `GatewayImageStreamService`、`GatewayTextToImageRequestDto` 和相关依赖注入。
+- 修复流式 SSE 事件处理：先处理 content 再检查 finished，避免同时携带 content 和 finish_reason 的事件被跳过。
+
 ## 1.15.6 - 2026-07-29
 
 - 适配网关流式错误事件：当上游 SSE 流中途出错时，网关会追加 `{"event_type":"error","message":"..."}` 事件。客户端 [`NativeStreamEventDto`](novelai_canvas/lib/data/api/native/dto/native_stream_dto.dart:32) 新增 `isError` / `errorMessage`，流式服务在收到 error 事件时抛出异常而非静默忽略。

@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/api/danbooru/danbooru_service.dart';
 import '../../data/api/gateway/services/gateway_chat_service.dart';
 import '../../data/api/gateway/services/gateway_director_services.dart';
-import '../../data/api/gateway/services/gateway_image_stream_service.dart';
 import '../../data/api/gateway/services/gateway_image_to_image_service.dart';
 import '../../data/api/gateway/services/gateway_inpaint_service.dart';
 import '../../data/api/gateway/services/gateway_models_service.dart';
@@ -201,7 +200,6 @@ void _registerApiServices() {
   getIt.registerLazySingleton(() => GatewayChatService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayImageToImageService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayInpaintService(gatewayDio));
-  getIt.registerLazySingleton(() => GatewayImageStreamService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayVibeTransferService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayUpscaleService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayTagSuggestionService(gatewayDio));
@@ -227,7 +225,6 @@ void _registerRepositories() {
       gatewayVibeTransferService: getIt(),
       gatewayImageToImageService: getIt(),
       gatewayInpaintService: getIt(),
-      gatewayImageStreamService: getIt(),
     ),
   );
   getIt.registerLazySingleton<ImageToolsRepository>(

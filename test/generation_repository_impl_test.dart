@@ -7,10 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:novelai_canvas/core/network/backend_mode.dart';
 import 'package:novelai_canvas/domain/entities/advanced_generation.dart';
-import 'package:novelai_canvas/data/api/gateway/dto/gateway_text_to_image_request_dto.dart';
 import 'package:novelai_canvas/data/api/gateway/services/gateway_chat_service.dart';
 import 'package:novelai_canvas/data/api/gateway/services/gateway_image_to_image_service.dart';
-import 'package:novelai_canvas/data/api/gateway/services/gateway_image_stream_service.dart';
 import 'package:novelai_canvas/data/api/gateway/services/gateway_inpaint_service.dart';
 import 'package:novelai_canvas/data/api/gateway/services/gateway_vibe_transfer_service.dart';
 import 'package:novelai_canvas/data/api/native/services/native_encode_vibe_service.dart';
@@ -60,7 +58,7 @@ void main() {
     expect(result.images.single.bytes, [9, 8, 7]);
   });
 
-  test('网关文生图流式使用统一图片端点并解析渐进帧', () async {
+  test('网关文生图流式走 Chat SSE 并解析最终图片', () async {
     final gatewayDio = Dio()..httpClientAdapter = _GenerationAdapter();
     final repository = _repository(
       Dio()..httpClientAdapter = _GenerationAdapter(),
@@ -72,51 +70,11 @@ void main() {
         .toList();
 
     final adapter = gatewayDio.httpClientAdapter as _GenerationAdapter;
-    expect(adapter.lastPath, '/v1/images/generations');
+    expect(adapter.lastPath, '/v1/chat/completions');
     expect(adapter.lastJson?['stream'], isTrue);
-    expect(adapter.lastJson?['prompt'], '1girl');
-    expect(adapter.lastJson?['steps'], 28);
-    expect(previews.map((preview) => preview.step), [4, 28]);
-    expect(previews.map((preview) => preview.isFinal), [false, true]);
-    expect(previews.last.imageBytes, [7, 8, 9]);
-  });
-
-  test('网关文生图 Builder 保留生成参数和人物契约', () {
-    final body = const GatewayTextToImageRequestBuilder().build(
-      const GatewayTextToImageRequestDto(
-        model: 'nai-diffusion-4-5-full',
-        prompt: '1girl',
-        width: 832,
-        height: 1216,
-        steps: 28,
-        scale: 5,
-        cfgRescale: 0,
-        sampler: 'k_euler_ancestral',
-        noiseSchedule: 'karras',
-        seed: 42,
-        negativePrompt: 'lowres',
-        quality: true,
-        ucPreset: 1,
-        characters: [
-          {
-            'prompt': 'red hair',
-            'negative_prompt': 'bad hands',
-            'position': [0.3, 0.5],
-            'enabled': true,
-          },
-        ],
-      ),
-    );
-
-    expect(body['response_format'], 'b64_json');
-    expect(body['negative_prompt'], 'lowres');
-    expect(body['qualityToggle'], isTrue);
-    expect((body['characters'] as List).single, {
-      'prompt': 'red hair',
-      'negative_prompt': 'bad hands',
-      'position': [0.3, 0.5],
-      'enabled': true,
-    });
+    expect(previews, hasLength(1));
+    expect(previews.single.isFinal, isTrue);
+    expect(previews.single.imageBytes, [7, 8, 9]);
   });
 
   test('高级参数快照往返保留 Vibe、角色参考和多角色坐标', () {
@@ -234,7 +192,6 @@ GenerationRepositoryImpl _repository(
   gatewayVibeTransferService: GatewayVibeTransferService(gatewayDio),
   gatewayImageToImageService: GatewayImageToImageService(gatewayDio),
   gatewayInpaintService: GatewayInpaintService(gatewayDio),
-  gatewayImageStreamService: GatewayImageStreamService(gatewayDio),
   downloadClient: downloadDio,
 );
 
@@ -280,13 +237,10 @@ class _GenerationAdapter implements HttpClientAdapter {
     lastJson = options.data is Map
         ? Map<String, Object?>.from(options.data as Map)
         : null;
-    if (options.path == '/v1/images/generations' &&
-        lastJson?['stream'] == true) {
-      final intermediate = base64Encode([1, 2, 3]);
-      final finalImage = base64Encode([7, 8, 9]);
+    if (options.path == '/v1/chat/completions' && lastJson?['stream'] == true) {
+      final image = base64Encode([7, 8, 9]);
       return ResponseBody.fromString(
-        'data: {"event_type":"intermediate","step_ix":4,"image":"$intermediate"}\n\n'
-        'data: {"event_type":"final","step_ix":28,"image":"$finalImage"}\n\n'
+        'data: {"choices":[{"delta":{"content":"data:image/png;base64,$image"},"finish_reason":"stop"}]}\n\n'
         'data: [DONE]\n\n',
         200,
         headers: {

@@ -15,12 +15,10 @@ import '../../domain/entities/generation_task.dart';
 import '../../domain/entities/image_generation_result.dart';
 import '../../domain/repositories/generation_repository.dart';
 import '../api/gateway/dto/gateway_chat_request_dto.dart';
-import '../api/gateway/dto/gateway_text_to_image_request_dto.dart';
 import '../api/gateway/dto/gateway_vibe_transfer_request_dto.dart';
 import '../api/gateway/dto/gateway_image_to_image_request_dto.dart';
 import '../api/gateway/dto/gateway_inpaint_request_dto.dart';
 import '../api/gateway/services/gateway_chat_service.dart';
-import '../api/gateway/services/gateway_image_stream_service.dart';
 import '../api/gateway/services/gateway_vibe_transfer_service.dart';
 import '../api/gateway/services/gateway_image_to_image_service.dart';
 import '../api/gateway/services/gateway_inpaint_service.dart';
@@ -46,7 +44,6 @@ class GenerationRepositoryImpl implements GenerationRepository {
     required GatewayVibeTransferService gatewayVibeTransferService,
     required GatewayImageToImageService gatewayImageToImageService,
     required GatewayInpaintService gatewayInpaintService,
-    required GatewayImageStreamService gatewayImageStreamService,
     required NativeEncodeVibeService nativeEncodeVibeService,
     Dio? downloadClient,
   }) : _nativeTextToImageService = nativeTextToImageService,
@@ -57,7 +54,6 @@ class GenerationRepositoryImpl implements GenerationRepository {
        _gatewayVibeTransferService = gatewayVibeTransferService,
        _gatewayImageToImageService = gatewayImageToImageService,
        _gatewayInpaintService = gatewayInpaintService,
-       _gatewayImageStreamService = gatewayImageStreamService,
        _nativeEncodeVibeService = nativeEncodeVibeService,
        _downloadClient = downloadClient ?? Dio();
 
@@ -69,7 +65,6 @@ class GenerationRepositoryImpl implements GenerationRepository {
   final GatewayVibeTransferService _gatewayVibeTransferService;
   final GatewayImageToImageService _gatewayImageToImageService;
   final GatewayInpaintService _gatewayInpaintService;
-  final GatewayImageStreamService _gatewayImageStreamService;
   final NativeEncodeVibeService _nativeEncodeVibeService;
   final Dio _downloadClient;
   final Map<String, CancelToken> _cancelTokens = {};
@@ -136,46 +131,33 @@ class GenerationRepositoryImpl implements GenerationRepository {
     }
   }
 
-  /// Gateway streaming sends every generation mode through the unified image
-  /// endpoint, which forwards NovelAI intermediate and final SSE events.
+  /// Gateway streaming falls back to Chat Completions SSE when the image
+  /// endpoint cannot stream through OpenAI-compatible proxies (new-api etc.).
+  ///
+  /// The Chat stream wraps the final image in a single SSE chunk — there are
+  /// no intermediate progressive frames — but it works reliably through
+  /// proxies that only support `stream` on `/v1/chat/completions`.
   Stream<GenerationPreview> _streamGateway(
     GenerationTask task,
     CancelToken cancelToken,
   ) async* {
     final spec = task.spec;
-    switch (spec.mode) {
-      case GenerationMode.textToImage:
-        final body = const GatewayTextToImageRequestBuilder().build(
-          _gatewayTextToImageRequest(spec),
-        );
-        yield* _streamGatewayImages(task, body, cancelToken);
-      case GenerationMode.imageToImage:
-        final dto = await _gatewayImg2ImgDto(spec);
-        final body = _gatewayImageToImageService.builder.build(dto);
-        yield* _streamGatewayImages(task, body, cancelToken);
-      case GenerationMode.inpaint:
-        final dto = await _gatewayInpaintDto(spec);
-        final body = _gatewayInpaintService.builder.build(dto);
-        yield* _streamGatewayImages(task, body, cancelToken);
-    }
-  }
-
-  Stream<GenerationPreview> _streamGatewayImages(
-    GenerationTask task,
-    Map<String, Object?> body,
-    CancelToken cancelToken,
-  ) async* {
-    await for (final event in _gatewayImageStreamService.generate(
-      '/v1/images/generations',
-      data: {...body, 'stream': true},
-      cancelToken: cancelToken,
-    )) {
-      yield GenerationPreview(
-        taskId: task.id,
-        step: event.stepIndex,
-        isFinal: event.isFinal,
-        imageBytes: ImageResponseDecoder.decodeBase64Image(event.image),
-      );
+    final request = _gatewayChatPlainRequest(spec);
+    await for (final event in _gatewayChatService.stream(request)) {
+      final content = event.content;
+      if (content != null && content.isNotEmpty) {
+        final image = ImageResponseDecoder.decodeChatMarkdown(content);
+        final bytes = image.bytes;
+        if (bytes != null) {
+          yield GenerationPreview(
+            taskId: task.id,
+            step: 0,
+            isFinal: true,
+            imageBytes: bytes,
+          );
+        }
+      }
+      if (event.finished) break;
     }
   }
 
@@ -469,34 +451,6 @@ class GenerationRepositoryImpl implements GenerationRepository {
       responseFormat: 'b64_json',
     );
   }
-
-  GatewayTextToImageRequestDto _gatewayTextToImageRequest(
-    GenerationSpec spec,
-  ) => GatewayTextToImageRequestDto(
-    model: spec.model,
-    prompt: spec.prompt,
-    width: spec.width,
-    height: spec.height,
-    steps: spec.steps,
-    scale: spec.scale,
-    cfgRescale: spec.cfgRescale,
-    sampler: spec.sampler,
-    noiseSchedule: spec.noiseSchedule,
-    seed: spec.seed,
-    negativePrompt: spec.negativePrompt,
-    quality: spec.quality,
-    ucPreset: spec.ucPreset,
-    characters: _enabledCharacters(spec)
-        .map(
-          (character) => {
-            'prompt': character.prompt,
-            'negative_prompt': character.negativePrompt,
-            'position': [character.position.x, character.position.y],
-            'enabled': true,
-          },
-        )
-        .toList(),
-  );
 
   GatewayChatRequestDto _gatewayCharacterRequest(GenerationSpec spec) {
     final characters = _enabledCharacters(spec)
