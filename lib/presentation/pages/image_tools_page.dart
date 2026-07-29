@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -315,9 +316,29 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
   Widget _compressCard() {
     final srcW = controller.width;
     final srcH = controller.height;
-    final dstW = ((srcW.clamp(64, 1600) + 32) ~/ 64 * 64).clamp(64, 1600);
-    final dstH = ((srcH.clamp(64, 1600) + 32) ~/ 64 * 64).clamp(64, 1600);
-    final needsResize = dstW != srcW || dstH != srcH;
+    final alignW = ((srcW.clamp(64, 1600) + 32) ~/ 64 * 64).clamp(64, 1600);
+    final alignH = ((srcH.clamp(64, 1600) + 32) ~/ 64 * 64).clamp(64, 1600);
+    final needsAlign = alignW != srcW || alignH != srcH;
+    final pixels = srcW * srcH;
+    const pixelCap = 1048576;
+    final needsFreeTier = pixels > pixelCap;
+    // Preview the free-tier target size.
+    int freeW = alignW;
+    int freeH = alignH;
+    if (needsFreeTier) {
+      final scale = sqrt(pixelCap / pixels);
+      freeW = ((srcW * scale).round()).clamp(64, 1600);
+      freeH = ((srcH * scale).round()).clamp(64, 1600);
+      freeW = ((freeW + 32) ~/ 64 * 64).clamp(64, 1600);
+      freeH = ((freeH + 32) ~/ 64 * 64).clamp(64, 1600);
+      while (freeW * freeH > pixelCap) {
+        if (freeW >= freeH) {
+          freeW -= 64;
+        } else {
+          freeH -= 64;
+        }
+      }
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -327,8 +348,8 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
             Text('压缩画幅', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             const Text(
-              '将源图缩放到最近的 64 像素对齐尺寸，使用高质量重采样。'
-              '适用于上传非标准尺寸图片后对齐到 NovelAI 合规画幅。',
+              '纯客户端操作，不消耗 Anlas、不走网络。'
+              '将源图用高质量重采样缩放到目标尺寸。',
             ),
             const SizedBox(height: 12),
             if (controller.sourceImagePath != null) ...[
@@ -336,22 +357,59 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
                 children: [
                   const Icon(Icons.straighten_rounded, size: 18),
                   const SizedBox(width: 8),
-                  Text(
-                    needsResize
-                        ? '当前 $srcW × $srcH → 对齐后 $dstW × $dstH'
-                        : '当前 $srcW × $srcH（已对齐，无需压缩）',
+                  Text('当前 $srcW × $srcH'),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+            // Align to 64
+            if (controller.sourceImagePath != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        needsAlign ? '对齐 64 → $alignW × $alignH' : '已对齐 64 像素',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: controller.isRunning || !needsAlign
+                          ? null
+                          : () =>
+                                controller.compressImage(CompressMode.align64),
+                      icon: const Icon(Icons.grid_4x4_rounded, size: 18),
+                      label: const Text('对齐 64'),
+                    ),
+                  ],
+                ),
+              ),
+            // Free tier
+            if (controller.sourceImagePath != null)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      needsFreeTier
+                          ? '压到免费 → $freeW × $freeH（≤ 1M 像素）'
+                          : '已在免费范围内',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: controller.isRunning || !needsFreeTier
+                        ? null
+                        : () => controller.compressImage(CompressMode.freeTier),
+                    icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+                    label: const Text('压到免费'),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+            if (controller.isRunning) ...[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(),
             ],
-            FilledButton.tonalIcon(
-              onPressed: controller.isRunning || !needsResize
-                  ? null
-                  : controller.compressImage,
-              icon: const Icon(Icons.compress_rounded),
-              label: Text(controller.isRunning ? '处理中…' : '压缩画幅'),
-            ),
           ],
         ),
       ),

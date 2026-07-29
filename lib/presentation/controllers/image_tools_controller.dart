@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
@@ -88,9 +89,10 @@ class ImageToolsController extends ChangeNotifier {
     ),
   );
 
-  /// Compresses the source image to a 64-aligned target size using LANCZOS
-  /// resampling. Pure client-side — no network call, no Anlas cost.
-  Future<void> compressImage() async {
+  /// Compresses the source image. [mode] selects between aligning to the
+  /// nearest 64-pixel grid or scaling down to fit within the Opus free
+  /// tier (≤ 1,048,576 px). Pure client-side — no network, no Anlas.
+  Future<void> compressImage(CompressMode mode) async {
     final path = sourceImagePath;
     if (path == null || path.isEmpty) {
       errorMessage = '请先选择源图片。';
@@ -99,10 +101,11 @@ class ImageToolsController extends ChangeNotifier {
     }
     final srcW = width;
     final srcH = height;
-    final dstW = _align64(srcW);
-    final dstH = _align64(srcH);
+    final (dstW, dstH) = _computeTargetSize(srcW, srcH, mode);
     if (dstW == srcW && dstH == srcH) {
-      errorMessage = '当前画幅已对齐 64 像素，无需压缩。';
+      errorMessage = mode == CompressMode.align64
+          ? '当前画幅已对齐 64 像素，无需压缩。'
+          : '当前画幅已在免费范围内，无需压缩。';
       notifyListeners();
       return;
     }
@@ -128,6 +131,33 @@ class ImageToolsController extends ChangeNotifier {
       isRunning = false;
       notifyListeners();
     }
+  }
+
+  static (int, int) _computeTargetSize(int srcW, int srcH, CompressMode mode) {
+    if (mode == CompressMode.align64) {
+      return (_align64(srcW), _align64(srcH));
+    }
+    // freeTier: scale down to ≤ 1,048,576 px keeping aspect ratio,
+    // then align to 64.
+    const pixelCap = 1048576;
+    final pixels = srcW * srcH;
+    if (pixels <= pixelCap) {
+      return (_align64(srcW), _align64(srcH));
+    }
+    final scale = sqrt(pixelCap / pixels);
+    var newW = (srcW * scale).round();
+    var newH = (srcH * scale).round();
+    newW = _align64(newW);
+    newH = _align64(newH);
+    // Shrink one step if still over the cap after rounding.
+    while (newW * newH > pixelCap) {
+      if (newW >= newH) {
+        newW -= 64;
+      } else {
+        newH -= 64;
+      }
+    }
+    return (newW, newH);
   }
 
   static int _align64(int value) =>
