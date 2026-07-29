@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.15.10 - 2026-07-29
+
+- 放大镜裁剪区域根据笔刷大小动态调整：笔刷直径大时自动降低放大倍数（增大裁剪区域），确保笔刷圆环始终完整显示在放大镜内。
+
 ## 1.15.9 - 2026-07-29
 
 - 自动预处理输入图：上传图片时如果尺寸不是 64 的倍数，客户端自动用 cubic 重采样缩放到最近的 64 对齐尺寸并保存为新文件作为源图，保证局部重绘输入输出画幅完全一致。[`_adoptSourceImageSize`](novelai_canvas/lib/presentation/controllers/generation_controller.dart:435) 新增 [`_autoResizeSource`](novelai_canvas/lib/presentation/controllers/generation_controller.dart:460) 方法。

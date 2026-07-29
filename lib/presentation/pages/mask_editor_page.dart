@@ -206,6 +206,9 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                               image: _capturedImage!,
                               position: _cursorPixel!,
                               canvasSize: _canvasSize!,
+                              penSize: _penSize,
+                              blocksX: _blocksX,
+                              blocksY: _blocksY,
                             ),
                         ],
                       ),
@@ -406,6 +409,9 @@ class _Magnifier extends StatelessWidget {
     required this.image,
     required this.position,
     required this.canvasSize,
+    required this.penSize,
+    required this.blocksX,
+    required this.blocksY,
   });
 
   /// The captured screenshot of the canvas (source image + mask overlay).
@@ -417,9 +423,32 @@ class _Magnifier extends StatelessWidget {
   /// The render size of the canvas (the AspectRatio child).
   final Size canvasSize;
 
+  /// Current brush diameter in blocks.
+  final double penSize;
+
+  /// Block grid dimensions, to compute brush pixel size.
+  final int blocksX;
+  final int blocksY;
+
   static const double _diameter = 120;
-  static const double _zoom = 2.5;
   static const double _offsetAbove = 80;
+
+  /// The crop region in canvas logical coords must be at least as wide as the
+  /// brush diameter plus some margin, so the brush ring always fits inside the
+  /// loupe. The zoom factor is then derived from the crop size.
+  double get _brushPixelDiameter {
+    final cellW = canvasSize.width / blocksX;
+    final cellH = canvasSize.height / blocksY;
+    return penSize * math.min(cellW, cellH);
+  }
+
+  double get _cropLogicalSize {
+    // Ensure crop covers at least the brush diameter + 40% margin.
+    final minCrop = _brushPixelDiameter * 1.4;
+    // Default crop for 2.5x zoom at small brush sizes.
+    const defaultCrop = _diameter / 2.5;
+    return math.max(minCrop, defaultCrop);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -440,8 +469,9 @@ class _Magnifier extends StatelessWidget {
     final scaleY = image.height / canvasSize.height;
 
     // Crop region in screenshot pixel coordinates, centered on finger.
-    final cropW = _diameter / _zoom * scaleX;
-    final cropH = _diameter / _zoom * scaleY;
+    final cropLogical = _cropLogicalSize;
+    final cropW = cropLogical * scaleX;
+    final cropH = cropLogical * scaleY;
     final cropX = (position.dx * scaleX - cropW / 2).clamp(
       0.0,
       (image.width - cropW).clamp(0.0, double.infinity),
