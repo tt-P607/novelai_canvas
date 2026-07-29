@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -51,6 +52,9 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
   /// Whether the magnifier loupe is enabled.
   bool _magnifier = true;
 
+  /// Decoded source image for the magnifier's CustomPainter.
+  ui.Image? _sourceUiImage;
+
   @override
   void initState() {
     super.initState();
@@ -62,8 +66,14 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
   Future<void> _loadSourceSize() async {
     final size = await readImageSize(widget.sourceImagePath);
     if (!mounted || size == null) return;
+    // Decode the image into a ui.Image for the magnifier painter.
+    final bytes = await File(widget.sourceImagePath).readAsBytes();
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    if (!mounted) return;
     setState(() {
       _sourceSize = size;
+      _sourceUiImage = frame.image;
       _blocksX = math.max(1, size.$1 ~/ 8);
       _blocksY = math.max(1, size.$2 ~/ 8);
       _blocks = List<bool>.filled(_blocksX * _blocksY, false);
@@ -158,12 +168,19 @@ class _MaskEditorPageState extends State<MaskEditorPage> {
                               ),
                             ),
                           ),
-                          if (_magnifier && _cursorPixel != null)
+                          if (_magnifier &&
+                              _cursorPixel != null &&
+                              _sourceUiImage != null &&
+                              _canvasSize != null)
                             _Magnifier(
-                              sourcePath: widget.sourceImagePath,
+                              image: _sourceUiImage!,
                               position: _cursorPixel!,
                               canvasSize: _canvasSize!,
-                              sourceSize: size,
+                              blocks: _blocks,
+                              blocksX: _blocksX,
+                              blocksY: _blocksY,
+                              cursor: _cursor,
+                              penSize: _penSize,
                             ),
                         ],
                       ),
@@ -353,22 +370,40 @@ class _BlockMaskPainter extends CustomPainter {
       oldDelegate.penSize != penSize;
 }
 
-/// A circular magnifier loupe that follows the finger during mask painting.
+/// A circular magnifier loupe showing the zoomed-in source image directly
+/// under the finger, positioned above the finger so it is never occluded.
 ///
-/// Shows a zoomed-in view of the source image at the finger position, offset
-/// upward so the finger never occludes the magnified content.
+/// Uses [Canvas.drawImageRect] to crop a small region of the source image
+/// around the finger position and draw it scaled-up inside the loupe circle.
 class _Magnifier extends StatelessWidget {
   const _Magnifier({
-    required this.sourcePath,
+    required this.image,
     required this.position,
     required this.canvasSize,
-    required this.sourceSize,
+    required this.blocks,
+    required this.blocksX,
+    required this.blocksY,
+    required this.cursor,
+    required this.penSize,
   });
 
-  final String sourcePath;
+  /// The decoded source image.
+  final ui.Image image;
+
+  /// Finger position in canvas (local) coordinates.
   final Offset position;
+
+  /// The render size of the canvas (the AspectRatio child).
   final Size canvasSize;
-  final (int, int) sourceSize;
+
+  /// Mask block selection, same as the main painter.
+  final List<bool> blocks;
+  final int blocksX;
+  final int blocksY;
+
+  /// Cursor in block coordinates and brush size, for the brush ring overlay.
+  final Offset? cursor;
+  final double penSize;
 
   static const double _diameter = 120;
   static const double _zoom = 2.5;
@@ -377,6 +412,7 @@ class _Magnifier extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+
     // Position the loupe above the finger, clamped within the canvas.
     final dx = (position.dx - _diameter / 2).clamp(
       0.0,
@@ -385,16 +421,22 @@ class _Magnifier extends StatelessWidget {
     var dy = position.dy - _diameter - _offsetAbove;
     if (dy < 0) dy = position.dy + _offsetAbove;
 
-    // The source image fills the canvas with BoxFit.fill, so the scale
-    // from canvas coords to image coords is:
-    final scaleX = sourceSize.$1 / canvasSize.width;
-    final scaleY = sourceSize.$2 / canvasSize.height;
+    // The source image fills the canvas with BoxFit.fill, so canvas coords
+    // map to image pixels via a simple scale.
+    final scaleX = image.width / canvasSize.width;
+    final scaleY = image.height / canvasSize.height;
 
-    // The crop region in image pixel coordinates around the finger.
-    final cropW = (_diameter / _zoom * scaleX).round();
-    final cropH = (_diameter / _zoom * scaleY).round();
-    final cropX = (position.dx * scaleX - cropW / 2).round();
-    final cropY = (position.dy * scaleY - cropH / 2).round();
+    // The crop region in image pixel coordinates, centered on the finger.
+    final cropW = (_diameter / _zoom * scaleX);
+    final cropH = (_diameter / _zoom * scaleY);
+    final cropX = (position.dx * scaleX - cropW / 2).clamp(
+      0.0,
+      (image.width - cropW).clamp(0.0, double.infinity),
+    );
+    final cropY = (position.dy * scaleY - cropH / 2).clamp(
+      0.0,
+      (image.height - cropH).clamp(0.0, double.infinity),
+    );
 
     return Positioned(
       left: dx,
@@ -418,27 +460,18 @@ class _Magnifier extends StatelessWidget {
             ],
           ),
           child: ClipOval(
-            child: OverflowBox(
-              maxWidth: _diameter * _zoom,
-              maxHeight: _diameter * _zoom,
-              child: Transform.translate(
-                offset: Offset(
-                  -(_diameter * _zoom / 2 -
-                      _diameter / 2 -
-                      (cropX / scaleX * _zoom)),
-                  -(_diameter * _zoom / 2 -
-                      _diameter / 2 -
-                      (cropY / scaleY * _zoom)),
-                ),
-                child: SizedBox(
-                  width: sourceSize.$1.toDouble() * _zoom,
-                  height: sourceSize.$2.toDouble() * _zoom,
-                  child: Image.file(
-                    File(sourcePath),
-                    fit: BoxFit.fill,
-                    gaplessPlayback: true,
-                  ),
-                ),
+            child: CustomPaint(
+              painter: _MagnifierPainter(
+                image: image,
+                srcRect: Rect.fromLTWH(cropX, cropY, cropW, cropH),
+                dstSize: _diameter,
+                position: position,
+                canvasSize: canvasSize,
+                blocks: blocks,
+                blocksX: blocksX,
+                blocksY: blocksY,
+                cursor: cursor,
+                penSize: penSize,
               ),
             ),
           ),
@@ -446,4 +479,97 @@ class _Magnifier extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MagnifierPainter extends CustomPainter {
+  const _MagnifierPainter({
+    required this.image,
+    required this.srcRect,
+    required this.dstSize,
+    required this.position,
+    required this.canvasSize,
+    required this.blocks,
+    required this.blocksX,
+    required this.blocksY,
+    required this.cursor,
+    required this.penSize,
+  });
+
+  final ui.Image image;
+  final Rect srcRect;
+  final double dstSize;
+  final Offset position;
+  final Size canvasSize;
+  final List<bool> blocks;
+  final int blocksX;
+  final int blocksY;
+  final Offset? cursor;
+  final double penSize;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Draw the zoomed crop of the source image into the full circle.
+    final dstRect = Rect.fromLTWH(0, 0, dstSize, dstSize);
+    canvas.drawImageRect(image, srcRect, dstRect, Paint());
+
+    // The scale from canvas coords to loupe coords.
+    final canvasToLoupeX = dstSize / srcRect.width;
+    final canvasToLoupeY = dstSize / srcRect.height;
+    // The offset of the crop region's top-left in canvas coords.
+    final cropOriginX = srcRect.left / (image.width / canvasSize.width);
+    final cropOriginY = srcRect.top / (image.height / canvasSize.height);
+
+    // Draw selected mask blocks within the loupe.
+    final cellW = canvasSize.width / blocksX;
+    final cellH = canvasSize.height / blocksY;
+    final fill = Paint()..color = const Color(0x594F6BD8);
+
+    bool on(int x, int y) =>
+        x >= 0 &&
+        x < blocksX &&
+        y >= 0 &&
+        y < blocksY &&
+        blocks[y * blocksX + x];
+
+    for (var y = 0; y < blocksY; y++) {
+      for (var x = 0; x < blocksX; x++) {
+        if (!on(x, y)) continue;
+        final blockCanvasX = x * cellW;
+        final blockCanvasY = y * cellH;
+        // Convert to loupe coords.
+        final lx = (blockCanvasX - cropOriginX) * canvasToLoupeX;
+        final ly = (blockCanvasY - cropOriginY) * canvasToLoupeY;
+        final lw = cellW * canvasToLoupeX;
+        final lh = cellH * canvasToLoupeY;
+        // Only draw if within the loupe bounds.
+        if (lx + lw < 0 || ly + lh < 0 || lx > dstSize || ly > dstSize) {
+          continue;
+        }
+        canvas.drawRect(Rect.fromLTWH(lx, ly, lw, lh), fill);
+      }
+    }
+
+    // Draw the brush ring at the finger position (center of the loupe).
+    final cursorPosition = cursor;
+    if (cursorPosition != null) {
+      final cursorCanvasX = cursorPosition.dx * cellW;
+      final cursorCanvasY = cursorPosition.dy * cellH;
+      final ringCenterX = (cursorCanvasX - cropOriginX) * canvasToLoupeX;
+      final ringCenterY = (cursorCanvasY - cropOriginY) * canvasToLoupeY;
+      final ringRadius = (penSize / 2 * cellW) * canvasToLoupeX;
+      final ring = Paint()
+        ..color = Colors.white.withValues(alpha: 0.9)
+        ..strokeWidth = 1.6
+        ..style = PaintingStyle.stroke;
+      canvas.drawCircle(Offset(ringCenterX, ringCenterY), ringRadius, ring);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MagnifierPainter oldDelegate) =>
+      oldDelegate.position != position ||
+      oldDelegate.image != image ||
+      oldDelegate.blocks != blocks ||
+      oldDelegate.cursor != cursor ||
+      oldDelegate.penSize != penSize;
 }
