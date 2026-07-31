@@ -17,6 +17,16 @@ class SubscriptionInfo extends Equatable {
   final Map<String, Object?> trainingStepsLeft;
   final Map<String, Object?> raw;
 
+  /// Total Anlas balance = subscription allowance + purchased credits.
+  /// trainingStepsLeft is NAI's internal name for the Anlas ledger.
+  int get anlas {
+    final fixed =
+        (trainingStepsLeft['fixedTrainingStepsLeft'] as num?)?.toInt() ?? 0;
+    final purchased =
+        (trainingStepsLeft['purchasedTrainingSteps'] as num?)?.toInt() ?? 0;
+    return fixed + purchased;
+  }
+
   String get tierName => switch (tier) {
     1 => 'Tablet',
     2 => 'Scroll',

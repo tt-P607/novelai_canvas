@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_it/get_it.dart';
@@ -265,15 +267,16 @@ Future<void> _registerControllers() async {
       backendConnectionService: getIt(),
       preferences: getIt(),
       settingsListenable: getIt<AppSettingsController>(),
-      subscriptionTierLoader: () async {
-        final info = await getIt<NativeSubscriptionService>().getSubscription();
-        return info.tier;
-      },
+      subscriptionLoader: () =>
+          getIt<NativeSubscriptionService>().getSubscription(),
     ),
   );
   // Fetch gateway models immediately if the app starts in gateway mode so the
   // model picker is correct on the first creation page open.
   await getIt<GenerationController>().refreshModels();
+  // Pull the live Anlas balance on launch so the badge does not show a stale
+  // cached value all session. refreshAnlas bypasses the tier TTL gate.
+  unawaited(getIt<GenerationController>().refreshAnlas());
   getIt.registerLazySingleton(
     () => HistoryController(repository: getIt(), queue: getIt()),
   );
@@ -283,6 +286,7 @@ Future<void> _registerControllers() async {
       imageStore: getIt(),
       historyRepository: getIt(),
       historyController: getIt(),
+      onAnlasConsumed: () => getIt<GenerationController>().refreshAnlas(),
     ),
   );
   getIt.registerLazySingleton(

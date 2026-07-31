@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -19,6 +20,7 @@ import '../controllers/generation_controller.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
 import '../controllers/prompt_assistant_controller.dart';
 import '../widgets/advanced_reference_card.dart';
+import '../widgets/anlas_icon.dart';
 import '../widgets/compact_snack_bar.dart';
 import '../widgets/draggable_assistant_bubble.dart';
 import '../widgets/floating_assistant_window.dart';
@@ -74,7 +76,7 @@ class _CreationPageState extends State<CreationPage> {
       text: controller.height.toString(),
     );
     controller.addListener(_syncControllers);
-    controller.refreshSubscription();
+    unawaited(controller.refreshSubscription());
     controller.refreshModels();
   }
 
@@ -127,6 +129,8 @@ class _CreationPageState extends State<CreationPage> {
                       if (controller.backendMode == BackendMode.native) ...[
                         const SizedBox(width: 10),
                         _tierBadge(),
+                        const SizedBox(width: 6),
+                        _anlasBalanceBadge(),
                       ],
                     ],
                   ),
@@ -261,6 +265,25 @@ class _CreationPageState extends State<CreationPage> {
     ],
   ];
 
+  /// Triggers a forced subscription/anlas refresh and surfaces the outcome via
+  /// a compact snackbar so the user knows whether the tap registered. The
+  /// controller itself rejects concurrent calls, so rapid taps are debounced.
+  Future<void> _refreshWithFeedback() async {
+    final outcome = await controller.refreshSubscription(force: true);
+    if (!mounted) return;
+    final (icon, message) = switch (outcome) {
+      RefreshOutcome.updated => (Icons.check_circle_rounded, '余额已更新'),
+      RefreshOutcome.unchanged => (Icons.check_circle_outline_rounded, '余额未变化'),
+      RefreshOutcome.busy => (Icons.hourglass_top_rounded, '正在刷新…'),
+      RefreshOutcome.failed => (
+        Icons.error_outline_rounded,
+        controller.subscriptionError ?? '刷新失败',
+      ),
+      RefreshOutcome.skipped => (Icons.info_outline_rounded, '当前后端不支持查询余额'),
+    };
+    showCompactSnackBar(context, icon: icon, message: message);
+  }
+
   /// Compact tier chip next to the page title. Tapping it re-checks the
   /// subscription immediately.
   Widget _tierBadge() {
@@ -272,7 +295,7 @@ class _CreationPageState extends State<CreationPage> {
     final highlight = controller.isOpus;
     return InkWell(
       borderRadius: BorderRadius.circular(20),
-      onTap: () => controller.refreshSubscription(force: true),
+      onTap: _refreshWithFeedback,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         decoration: BoxDecoration(
@@ -307,6 +330,49 @@ class _CreationPageState extends State<CreationPage> {
     );
   }
 
+  /// Remaining Anlas balance. Tapping forces a refresh. The badge only
+  /// repaints when the value actually changes, so free Opus generations
+  /// leave it visually stable.
+  Widget _anlasBalanceBadge() {
+    final colors = Theme.of(context).colorScheme;
+    final known = controller.anlasKnown;
+    final errored = controller.anlasError != null;
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: _refreshWithFeedback,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: errored
+              ? colors.errorContainer.withValues(alpha: 0.7)
+              : colors.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              known ? '${controller.anlas}' : '?',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: errored ? colors.onErrorContainer : kAnlasColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            if (errored)
+              Icon(
+                Icons.error_outline_rounded,
+                size: 14,
+                color: colors.onErrorContainer,
+              )
+            else
+              const AnlasIcon(size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _queueChip() {
     final isRunning = controller.queueState.isRunning;
     final pending = controller.queueState.pendingCount;
@@ -330,7 +396,7 @@ class _CreationPageState extends State<CreationPage> {
       final c when c.subscriptionLoading => '…',
       final c when !c.subscriptionKnown => '?',
       final c when c.anlasEstimate.isFree => '免费',
-      final c => '${c.anlasEstimate.total} Anlas',
+      final c => '${c.anlasEstimate.total}',
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -338,12 +404,19 @@ class _CreationPageState extends State<CreationPage> {
         color: colors.onPrimary.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: colors.onPrimary,
-          fontWeight: FontWeight.w700,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AnlasIcon(size: 12),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colors.onPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -371,10 +444,7 @@ class _CreationPageState extends State<CreationPage> {
               ).textTheme.bodySmall?.copyWith(color: colors.tertiary),
             ),
           ),
-          TextButton(
-            onPressed: () => controller.refreshSubscription(force: true),
-            child: const Text('重试'),
-          ),
+          TextButton(onPressed: _refreshWithFeedback, child: const Text('重试')),
         ],
       ),
     );

@@ -5,16 +5,26 @@ import 'package:flutter/material.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/network/backend_mode.dart';
 import '../../domain/entities/director_emotion.dart';
 import '../../domain/repositories/image_tools_repository.dart';
+import '../controllers/generation_controller.dart';
 import '../controllers/image_tools_controller.dart';
+import '../widgets/anlas_icon.dart';
 import '../widgets/compact_snack_bar.dart';
 import '../widgets/fullscreen_image_preview.dart';
 
 class ImageToolsPage extends StatefulWidget {
-  const ImageToolsPage({super.key, required this.controller});
+  const ImageToolsPage({
+    super.key,
+    required this.controller,
+    this.generationController,
+  });
 
   final ImageToolsController controller;
+
+  /// Used to read and refresh the Anlas balance badge. Null in tests.
+  final GenerationController? generationController;
 
   @override
   State<ImageToolsPage> createState() => _ImageToolsPageState();
@@ -39,44 +49,117 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: ListenableBuilder(
-      listenable: controller,
-      builder: (context, _) => CustomScrollView(
-        slivers: [
-          const SliverAppBar.large(title: Text('图像工具')),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-            sliver: SliverList.list(
-              children: [
-                _sourceCard(),
-                const SizedBox(height: 16),
-                _upscaleCard(),
-                const SizedBox(height: 16),
-                _directorCard(),
-                const SizedBox(height: 16),
-                _compressCard(),
-                if (controller.errorMessage != null) ...[
-                  const SizedBox(height: 12),
-                  Card(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(controller.errorMessage!),
-                    ),
-                  ),
+  Widget build(BuildContext context) {
+    final gen = widget.generationController;
+    final listenables = gen == null
+        ? controller
+        : Listenable.merge([controller, gen]);
+    return SafeArea(
+      child: ListenableBuilder(
+        listenable: listenables,
+        builder: (context, _) => CustomScrollView(
+          slivers: [
+            SliverAppBar.large(
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('图像工具'),
+                  if (gen != null && gen.backendMode == BackendMode.native) ...[
+                    const SizedBox(width: 10),
+                    _anlasBalanceBadge(gen),
+                  ],
                 ],
-                if (controller.resultBytes != null) ...[
-                  const SizedBox(height: 16),
-                  _comparisonCard(),
-                ],
-              ],
+              ),
             ),
-          ),
-        ],
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+              sliver: SliverList.list(
+                children: [
+                  _sourceCard(),
+                  const SizedBox(height: 16),
+                  _upscaleCard(),
+                  const SizedBox(height: 16),
+                  _directorCard(),
+                  const SizedBox(height: 16),
+                  _compressCard(),
+                  if (controller.errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(controller.errorMessage!),
+                      ),
+                    ),
+                  ],
+                  if (controller.resultBytes != null) ...[
+                    const SizedBox(height: 16),
+                    _comparisonCard(),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
+
+  Future<void> _refreshAnlasWithFeedback(GenerationController gen) async {
+    final outcome = await gen.refreshSubscription(force: true);
+    if (!mounted) return;
+    final (icon, message) = switch (outcome) {
+      RefreshOutcome.updated => (Icons.check_circle_rounded, '余额已更新'),
+      RefreshOutcome.unchanged => (Icons.check_circle_outline_rounded, '余额未变化'),
+      RefreshOutcome.busy => (Icons.hourglass_top_rounded, '正在刷新…'),
+      RefreshOutcome.failed => (
+        Icons.error_outline_rounded,
+        gen.subscriptionError ?? '刷新失败',
+      ),
+      RefreshOutcome.skipped => (Icons.info_outline_rounded, '当前后端不支持查询余额'),
+    };
+    showCompactSnackBar(context, icon: icon, message: message);
+  }
+
+  Widget _anlasBalanceBadge(GenerationController gen) {
+    final colors = Theme.of(context).colorScheme;
+    final known = gen.anlasKnown;
+    final errored = gen.anlasError != null;
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => _refreshAnlasWithFeedback(gen),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: errored
+              ? colors.errorContainer.withValues(alpha: 0.7)
+              : colors.surfaceContainerHighest.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              known ? '${gen.anlas}' : '?',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: errored ? colors.onErrorContainer : kAnlasColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            if (errored)
+              Icon(
+                Icons.error_outline_rounded,
+                size: 14,
+                color: colors.onErrorContainer,
+              )
+            else
+              const AnlasIcon(size: 14),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _comparisonCard() => Card(
     child: Padding(
@@ -95,7 +178,14 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
               if (controller.anlasCost != null)
                 Chip(
                   visualDensity: VisualDensity.compact,
-                  label: Text('${controller.anlasCost} A'),
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnlasIcon(size: 12),
+                      const SizedBox(width: 4),
+                      Text('${controller.anlasCost}'),
+                    ],
+                  ),
                 ),
             ],
           ),

@@ -8,6 +8,7 @@ import '../../core/errors/error_message.dart';
 import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/history_controller.dart';
+import '../widgets/anlas_icon.dart';
 import '../widgets/compact_snack_bar.dart';
 import '../widgets/fullscreen_image_preview.dart';
 
@@ -166,7 +167,25 @@ class _HistoryPageState extends State<HistoryPage> {
             _detail('采样器', task.spec.sampler),
             _detail('调度', task.spec.noiseSchedule),
             if (task.anlasCost != null)
-              _detail('Anlas', task.anlasCost.toString()),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(width: 76, child: Text('Anlas')),
+                    Expanded(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AnlasIcon(size: 12),
+                          const SizedBox(width: 4),
+                          SelectableText(task.anlasCost.toString()),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: () async {

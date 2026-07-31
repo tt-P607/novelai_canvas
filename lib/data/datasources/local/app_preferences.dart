@@ -83,6 +83,10 @@ class AppPreferences {
   /// live in plain preferences for instant display on cold start.
   int? get subscriptionTier => _preferences.getInt('subscription_tier');
 
+  /// Cached Anlas balance so the badge is correct on cold start without a
+  /// network round-trip. Anlas is not a credential.
+  int? get subscriptionAnlas => _preferences.getInt('subscription_anlas');
+
   DateTime? get subscriptionCheckedAt {
     final millis = _preferences.getInt('subscription_checked_at');
     return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
@@ -94,6 +98,10 @@ class AppPreferences {
       'subscription_checked_at',
       checkedAt.millisecondsSinceEpoch,
     );
+  }
+
+  Future<void> setSubscriptionAnlas(int anlas) async {
+    await _preferences.setInt('subscription_anlas', anlas);
   }
 
   /// Persisted generation parameters so the creation page survives a cold

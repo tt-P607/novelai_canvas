@@ -62,7 +62,10 @@ class _HomeShellState extends State<HomeShell> {
         generationController: widget.generationController,
         onReuse: () => setState(() => _selectedIndex = 0),
       ),
-      ImageToolsPage(controller: widget.imageToolsController),
+      ImageToolsPage(
+        controller: widget.imageToolsController,
+        generationController: widget.generationController,
+      ),
       SettingsPage(
         controller: widget.settingsController,
         credentialStore: widget.credentialStore,

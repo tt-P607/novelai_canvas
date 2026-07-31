@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -22,6 +23,7 @@ class ImageToolsController extends ChangeNotifier {
     required GenerationHistoryRepository historyRepository,
     required HistoryController historyController,
     Uuid uuid = const Uuid(),
+    this.onAnlasConsumed,
   }) : _repository = repository,
        _imageStore = imageStore,
        _historyRepository = historyRepository,
@@ -33,6 +35,10 @@ class ImageToolsController extends ChangeNotifier {
   final GenerationHistoryRepository _historyRepository;
   final HistoryController _historyController;
   final Uuid _uuid;
+
+  /// Invoked after a billed tool (upscale / director) completes so the caller
+  /// can refresh the Anlas balance. Null in tests.
+  final Future<dynamic> Function()? onAnlasConsumed;
 
   String? sourceImagePath;
   int width = 1024;
@@ -238,6 +244,11 @@ class ImageToolsController extends ChangeNotifier {
       );
       await _historyRepository.save(task);
       await _historyController.load();
+      // Upscale and bg-removal always consume Anlas; other director tools may
+      // too depending on size. Refresh unconditionally — the badge only
+      // repaints when the balance actually changes.
+      final cb = onAnlasConsumed;
+      if (cb != null) unawaited(cb());
     } catch (error) {
       errorMessage = friendlyErrorMessage(error);
     } finally {

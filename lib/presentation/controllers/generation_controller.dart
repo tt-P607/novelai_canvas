@@ -20,7 +20,27 @@ import '../../domain/entities/anlas_estimate.dart';
 import '../../domain/entities/generation_task.dart';
 import '../../domain/entities/model_info.dart';
 import '../../domain/entities/prompt_assistant.dart';
+import '../../domain/entities/subscription_info.dart';
 import '../../domain/repositories/generation_history_repository.dart';
+
+/// Outcome of a user-triggered subscription/anlas refresh, used to drive the
+/// tap feedback on the balance badge.
+enum RefreshOutcome {
+  /// Refresh completed and the value changed.
+  updated,
+
+  /// Refresh completed but the value is identical to before.
+  unchanged,
+
+  /// A refresh is already in-flight; the tap was ignored.
+  busy,
+
+  /// The refresh was skipped (non-native backend, no loader, TTL not expired).
+  skipped,
+
+  /// The refresh failed with a network or parse error.
+  failed,
+}
 
 class GenerationController extends ChangeNotifier {
   GenerationController({
@@ -29,7 +49,7 @@ class GenerationController extends ChangeNotifier {
     required BackendMode Function() backendModeProvider,
     BackendConnectionService? backendConnectionService,
     AppPreferences? preferences,
-    Future<int> Function()? subscriptionTierLoader,
+    Future<SubscriptionInfo> Function()? subscriptionLoader,
     Listenable? settingsListenable,
     Uuid uuid = const Uuid(),
   }) : _queue = queue,
@@ -37,7 +57,7 @@ class GenerationController extends ChangeNotifier {
        _backendModeProvider = backendModeProvider,
        _backendConnectionService = backendConnectionService,
        _preferences = preferences,
-       _subscriptionTierLoader = subscriptionTierLoader,
+       _subscriptionLoader = subscriptionLoader,
        _settingsListenable = settingsListenable,
        _uuid = uuid,
        stream = preferences?.streamGenerationEnabled ?? false {
@@ -50,6 +70,10 @@ class GenerationController extends ChangeNotifier {
     if (cachedTier != null) {
       subscriptionTier = cachedTier;
       isOpus = cachedTier >= 3;
+    }
+    final cachedAnlas = preferences?.subscriptionAnlas;
+    if (cachedAnlas != null) {
+      anlas = cachedAnlas;
     }
     // Restore the last-used generation parameters so a cold start (the OS
     // reclaiming the app from the background) does not reset the user's
@@ -87,6 +111,15 @@ class GenerationController extends ChangeNotifier {
         }
       }
       notifyListeners();
+      // Any billed operation that reaches a terminal state may have consumed
+      // Anlas — including a cancelled batch where some images already finished.
+      // refreshAnlas is idempotent and reuses an in-flight request, so firing
+      // it on every terminal task (including each image of a batch) is safe.
+      if (task.status == GenerationTaskStatus.completed ||
+          task.status == GenerationTaskStatus.cancelled ||
+          task.status == GenerationTaskStatus.failed) {
+        unawaited(refreshAnlas());
+      }
     });
     // React to backend switches from the settings page without coupling the
     // settings controller to this one: refresh models and subscription state.
@@ -95,7 +128,7 @@ class GenerationController extends ChangeNotifier {
 
   void _onSettingsChanged() {
     refreshModels(force: true);
-    refreshSubscription(force: true);
+    unawaited(refreshSubscription(force: true));
   }
 
   final GenerationQueue _queue;
@@ -103,7 +136,7 @@ class GenerationController extends ChangeNotifier {
   final BackendMode Function() _backendModeProvider;
   final BackendConnectionService? _backendConnectionService;
   final AppPreferences? _preferences;
-  final Future<int> Function()? _subscriptionTierLoader;
+  final Future<SubscriptionInfo> Function()? _subscriptionLoader;
   final Listenable? _settingsListenable;
   final Uuid _uuid;
 
@@ -183,6 +216,16 @@ class GenerationController extends ChangeNotifier {
 
   bool get subscriptionKnown => subscriptionTier != null;
 
+  /// Remaining Anlas balance. Null until the first successful read; a cached
+  /// value is restored on cold start so the badge is never blank. The UI only
+  /// changes when the value actually differs, so free Opus generations (which
+  /// cost 0) leave the badge untouched.
+  int? anlas;
+  bool anlasLoading = false;
+  String? anlasError;
+
+  bool get anlasKnown => anlas != null;
+
   String? get subscriptionTierName => switch (subscriptionTier) {
     null => null,
     1 => 'Tablet',
@@ -224,29 +267,78 @@ class GenerationController extends ChangeNotifier {
   /// Cached tiers older than this are re-validated in the background.
   static const subscriptionTtl = Duration(hours: 6);
 
-  Future<void> refreshSubscription({bool force = false}) async {
-    final loader = _subscriptionTierLoader;
-    if (loader == null) return;
-    if (subscriptionLoading) return;
-    if (subscriptionKnown && !force && !_subscriptionStale) return;
-    if (_backendModeProvider() != BackendMode.native) return;
+  Future<RefreshOutcome> refreshSubscription({bool force = false}) async {
+    final loader = _subscriptionLoader;
+    if (loader == null) return RefreshOutcome.skipped;
+    if (subscriptionLoading) return RefreshOutcome.busy;
+    if (subscriptionKnown && !force && !_subscriptionStale) {
+      return RefreshOutcome.skipped;
+    }
+    if (_backendModeProvider() != BackendMode.native) {
+      return RefreshOutcome.skipped;
+    }
 
     subscriptionLoading = true;
     subscriptionError = null;
     notifyListeners();
     try {
-      final tier = await loader();
-      subscriptionTier = tier;
-      isOpus = tier >= 3;
-      await _preferences?.setSubscriptionTier(tier, DateTime.now());
-    } catch (error) {
-      // A stale cached tier keeps working; only surface the failure when
-      // there is nothing to show at all.
-      if (!subscriptionKnown) {
-        subscriptionError = friendlyErrorMessage(error);
+      final info = await loader();
+      subscriptionTier = info.tier;
+      isOpus = info.tier >= 3;
+      final newAnlas = info.anlas;
+      final changed = anlas != newAnlas;
+      if (changed) {
+        anlas = newAnlas;
       }
+      anlasError = null;
+      await _preferences?.setSubscriptionTier(info.tier, DateTime.now());
+      await _preferences?.setSubscriptionAnlas(newAnlas);
+      return changed ? RefreshOutcome.updated : RefreshOutcome.unchanged;
+    } catch (error) {
+      // Even with a cached tier, surface the failure so the user knows the
+      // displayed balance may be stale after a network error.
+      subscriptionError = friendlyErrorMessage(error);
+      anlasError = friendlyErrorMessage(error);
+      return RefreshOutcome.failed;
     } finally {
       subscriptionLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Refreshes only the Anlas balance after a billed operation (generation,
+  /// director tool, upscale). Bypasses the tier TTL gate so the badge reflects
+  /// the real deduction immediately, but reuses an in-flight request.
+  Future<RefreshOutcome> refreshAnlas() async {
+    final loader = _subscriptionLoader;
+    if (loader == null) return RefreshOutcome.skipped;
+    if (_backendModeProvider() != BackendMode.native) {
+      return RefreshOutcome.skipped;
+    }
+    if (anlasLoading) return RefreshOutcome.busy;
+    anlasLoading = true;
+    notifyListeners();
+    try {
+      final info = await loader();
+      final newAnlas = info.anlas;
+      final changed = anlas != newAnlas;
+      if (changed) {
+        anlas = newAnlas;
+      }
+      anlasError = null;
+      await _preferences?.setSubscriptionAnlas(newAnlas);
+      // Keep the tier in sync too — the same response carries it.
+      if (subscriptionTier != info.tier) {
+        subscriptionTier = info.tier;
+        isOpus = info.tier >= 3;
+        await _preferences?.setSubscriptionTier(info.tier, DateTime.now());
+      }
+      return changed ? RefreshOutcome.updated : RefreshOutcome.unchanged;
+    } catch (error) {
+      anlasError = friendlyErrorMessage(error);
+      return RefreshOutcome.failed;
+    } finally {
+      anlasLoading = false;
       notifyListeners();
     }
   }
