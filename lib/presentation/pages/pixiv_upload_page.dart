@@ -209,8 +209,6 @@ class _PixivUploadPageState extends State<PixivUploadPage> {
       sexual: formValues.sexual,
       attributes: formValues.attributes,
       ratings: formValues.ratings,
-      titleTranslationEn: formValues.titleTranslationEn,
-      captionTranslationEn: formValues.captionTranslationEn,
       responseAutoAccept: formValues.responseAutoAccept,
       original: formValues.original,
       stripMetadata: s.stripMetadata,

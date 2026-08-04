@@ -182,7 +182,7 @@ class PixivApiService {
       'attributes[lo]': task.attributes.lo ? 'true' : 'false',
       'attributes[yuri]': task.attributes.yuri ? 'true' : 'false',
       'caption': task.caption,
-      'captionTranslations[en]': task.captionTranslationEn,
+      'captionTranslations[en]': '',
       'original': task.original ? 'true' : 'false',
       'ratings[antisocial]': task.ratings.antisocial ? 'true' : 'false',
       'ratings[drug]': task.ratings.drug ? 'true' : 'false',
@@ -198,7 +198,7 @@ class PixivApiService {
       'suggestedTags[]': const <String>['女の子'],
       'tags[]': task.tags,
       'title': task.title,
-      'titleTranslations[en]': task.titleTranslationEn,
+      'titleTranslations[en]': '',
       'xRestrict': switch (task.xRestrict) {
         PixivXRestrict.general => 'general',
         PixivXRestrict.r18 => 'r18',

@@ -115,8 +115,6 @@ class PixivUploadQueue extends ChangeNotifier {
     sexual: false,
     attributes: PixivAttributes(),
     ratings: PixivRatings(),
-    titleTranslationEn: '',
-    captionTranslationEn: '',
     responseAutoAccept: false,
     original: false,
     stripMetadata: false,

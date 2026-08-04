@@ -62,8 +62,6 @@ class PixivUploadTask extends Equatable {
     required this.sexual,
     required this.attributes,
     required this.ratings,
-    required this.titleTranslationEn,
-    required this.captionTranslationEn,
     required this.responseAutoAccept,
     required this.original,
     required this.stripMetadata,
@@ -105,12 +103,6 @@ class PixivUploadTask extends Equatable {
   /// 安全评级开关：暴力 / 反社会 / 毒品 / 宗教 / 思想。
   final PixivRatings ratings;
 
-  /// 标题英文翻译。
-  final String titleTranslationEn;
-
-  /// 正文英文翻译。
-  final String captionTranslationEn;
-
   /// 自动接受作品回复。
   final bool responseAutoAccept;
 
@@ -141,8 +133,6 @@ class PixivUploadTask extends Equatable {
     bool? sexual,
     PixivAttributes? attributes,
     PixivRatings? ratings,
-    String? titleTranslationEn,
-    String? captionTranslationEn,
     bool? responseAutoAccept,
     bool? original,
     bool? stripMetadata,
@@ -168,8 +158,6 @@ class PixivUploadTask extends Equatable {
       sexual: sexual ?? this.sexual,
       attributes: attributes ?? this.attributes,
       ratings: ratings ?? this.ratings,
-      titleTranslationEn: titleTranslationEn ?? this.titleTranslationEn,
-      captionTranslationEn: captionTranslationEn ?? this.captionTranslationEn,
       responseAutoAccept: responseAutoAccept ?? this.responseAutoAccept,
       original: original ?? this.original,
       stripMetadata: stripMetadata ?? this.stripMetadata,
@@ -199,8 +187,6 @@ class PixivUploadTask extends Equatable {
     sexual,
     attributes,
     ratings,
-    titleTranslationEn,
-    captionTranslationEn,
     responseAutoAccept,
     original,
     stripMetadata,

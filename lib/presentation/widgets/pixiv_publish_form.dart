@@ -19,8 +19,6 @@ class PixivPublishFormValues {
     required this.sexual,
     required this.attributes,
     required this.ratings,
-    required this.titleTranslationEn,
-    required this.captionTranslationEn,
     required this.responseAutoAccept,
     required this.original,
   });
@@ -35,8 +33,6 @@ class PixivPublishFormValues {
   final bool sexual;
   final PixivAttributes attributes;
   final PixivRatings ratings;
-  final String titleTranslationEn;
-  final String captionTranslationEn;
   final bool responseAutoAccept;
   final bool original;
 }
@@ -57,8 +53,6 @@ class PixivPublishFormState extends State<PixivPublishForm> {
   late final TextEditingController _title;
   late final TextEditingController _caption;
   late final TextEditingController _tags;
-  late final TextEditingController _titleTranslation;
-  late final TextEditingController _captionTranslation;
 
   late PixivXRestrict _xRestrict;
   late PixivAiType _aiType;
@@ -77,8 +71,6 @@ class PixivPublishFormState extends State<PixivPublishForm> {
     _title = TextEditingController();
     _caption = TextEditingController(text: s.captionPrefix);
     _tags = TextEditingController(text: s.defaultTags.join(', '));
-    _titleTranslation = TextEditingController();
-    _captionTranslation = TextEditingController();
     _xRestrict = s.xRestrictDefault;
     _aiType = s.aiTypeDefault;
     _restrict = s.restrictDefault;
@@ -95,18 +87,20 @@ class PixivPublishFormState extends State<PixivPublishForm> {
     _title.dispose();
     _caption.dispose();
     _tags.dispose();
-    _titleTranslation.dispose();
-    _captionTranslation.dispose();
     super.dispose();
+  }
+
+  /// Splits a raw tag string on both ASCII and full-width commas.
+  List<String> _parseTags(String raw) {
+    return raw
+        .split(RegExp(r'[,，]'))
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
   }
 
   /// Snapshot of the current field values for submission.
   PixivPublishFormValues collect() {
-    final tags = _tags.text
-        .split(',')
-        .map((t) => t.trim())
-        .where((t) => t.isNotEmpty)
-        .toList();
     // Pixiv forces sexual=false for all-ages works.
     final effectiveSexual = _xRestrict == PixivXRestrict.general
         ? false
@@ -114,7 +108,7 @@ class PixivPublishFormState extends State<PixivPublishForm> {
     return PixivPublishFormValues(
       title: _title.text.trim(),
       caption: _caption.text.trim(),
-      tags: tags,
+      tags: _parseTags(_tags.text),
       xRestrict: _xRestrict,
       aiType: _aiType,
       restrict: _restrict,
@@ -122,8 +116,6 @@ class PixivPublishFormState extends State<PixivPublishForm> {
       sexual: effectiveSexual,
       attributes: _attributes,
       ratings: _ratings,
-      titleTranslationEn: _titleTranslation.text.trim(),
-      captionTranslationEn: _captionTranslation.text.trim(),
       responseAutoAccept: _responseAutoAccept,
       original: _original,
     );
@@ -135,8 +127,6 @@ class PixivPublishFormState extends State<PixivPublishForm> {
     _title.clear();
     _caption.text = s.captionPrefix;
     _tags.text = s.defaultTags.join(', ');
-    _titleTranslation.clear();
-    _captionTranslation.clear();
     setState(() {
       _xRestrict = s.xRestrictDefault;
       _aiType = s.aiTypeDefault;
@@ -183,8 +173,6 @@ class PixivPublishFormState extends State<PixivPublishForm> {
           ratings: _ratings,
           onChanged: (v) => setState(() => _ratings = v),
         ),
-        const SizedBox(height: 12),
-        _translationCard(context),
       ],
     );
   }
@@ -220,40 +208,10 @@ class PixivPublishFormState extends State<PixivPublishForm> {
               controller: _tags,
               decoration: const InputDecoration(
                 labelText: '标签 (逗号分隔，最多 10 个)',
+                helperText: '支持中英文逗号',
                 border: OutlineInputBorder(),
               ),
               maxLines: 2,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _translationCard(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('英文翻译 (可选)', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _titleTranslation,
-              decoration: const InputDecoration(
-                labelText: '标题翻译 (英文)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _captionTranslation,
-              decoration: const InputDecoration(
-                labelText: '正文翻译 (英文)',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
             ),
           ],
         ),

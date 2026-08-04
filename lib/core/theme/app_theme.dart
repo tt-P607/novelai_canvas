@@ -110,6 +110,15 @@ abstract final class AppTheme {
         backgroundColor: Colors.white.withValues(alpha: 0.07),
         side: BorderSide(color: Colors.white.withValues(alpha: 0.16)),
       ),
+      dropdownMenuTheme: DropdownMenuThemeData(
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(
+            scheme.surface.withValues(alpha: 0.95),
+          ),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          elevation: const WidgetStatePropertyAll(8),
+        ),
+      ),
     );
   }
 }
