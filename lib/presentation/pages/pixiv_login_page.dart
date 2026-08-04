@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -18,6 +20,13 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
   bool _loading = true;
   bool _captured = false;
   bool _redirectedToCreate = false;
+  Timer? _retryTimer;
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -70,11 +79,47 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
       return;
     }
 
-    final cookieManager = WebViewCookieManager();
-    final cookies = await cookieManager.getCookies(
-      domain: Uri.parse('https://www.pixiv.net'),
+    // Merge cookies from the domains Pixiv uses so the session cookie
+    // (sessionid, HttpOnly) is not missed if it lives under a parent domain.
+    final cookies = <WebViewCookie>[];
+    for (final domain in const [
+      'https://www.pixiv.net',
+      'https://accounts.pixiv.net',
+      'https://touch.pixiv.net',
+    ]) {
+      final manager = WebViewCookieManager();
+      try {
+        final batch = await manager.getCookies(domain: Uri.parse(domain));
+        for (final c in batch) {
+          final exists = cookies.any(
+            (e) => e.name == c.name && e.value == c.value,
+          );
+          if (!exists) cookies.add(c);
+        }
+      } catch (_) {
+        // A domain read failure must not abort the whole capture.
+      }
+    }
+
+    // Pixiv's real login cookie is HttpOnly "sessionid". Without it the user
+    // is not logged in yet — keep waiting instead of returning garbage. The
+    // session cookie may be written a beat after onPageFinished, so retry a
+    // few times before giving up.
+    final hasSession = cookies.any(
+      (c) => c.name.toLowerCase() == 'sessionid' && c.value.isNotEmpty,
     );
-    if (cookies.isEmpty) return;
+    if (!hasSession) {
+      _retryTimer?.cancel();
+      _retryTimer = Timer(const Duration(seconds: 2), () async {
+        if (!mounted || _captured) return;
+        // Re-run against the current page URL; upload page may have moved on.
+        final current = await _controller.currentUrl();
+        if (current != null) await _handlePageFinished(current);
+      });
+      return;
+    }
+    _retryTimer?.cancel();
+    _retryTimer = null;
 
     final cookieHeader = cookies.map((c) => '${c.name}=${c.value}').join('; ');
     // Pixiv stores the x-csrf-token in the page DOM (meta tag) or in
