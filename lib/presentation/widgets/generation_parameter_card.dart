@@ -12,6 +12,7 @@ const _samplers = <String, String>{
   'k_dpm_2': 'DPM2',
   'k_dpm_2_ancestral': 'DPM2 Ancestral',
   'k_dpmpp_2m': 'DPM++ 2M',
+  'k_dpmpp_2m_sde': 'DPM++ 2M SDE',
   'k_dpmpp_2s_ancestral': 'DPM++ 2S Ancestral',
   'k_dpmpp_sde': 'DPM++ SDE',
   'ddim': 'DDIM',

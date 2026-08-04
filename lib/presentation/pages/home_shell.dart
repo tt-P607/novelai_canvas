@@ -9,11 +9,15 @@ import '../controllers/generation_controller.dart';
 import '../controllers/history_controller.dart';
 import '../controllers/image_tools_controller.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
+import '../../core/di/injection.dart';
+import '../controllers/pixiv_settings_controller.dart';
+import '../controllers/pixiv_upload_controller.dart';
 import '../controllers/prompt_assistant_controller.dart';
 import '../widgets/glass/liquid_glass.dart';
 import 'creation_page.dart';
 import 'history_page.dart';
 import 'image_tools_page.dart';
+import 'pixiv_upload_page.dart';
 import 'settings_page.dart';
 
 class HomeShell extends StatefulWidget {
@@ -61,10 +65,25 @@ class _HomeShellState extends State<HomeShell> {
         controller: widget.historyController,
         generationController: widget.generationController,
         onReuse: () => setState(() => _selectedIndex = 0),
+        onPublishToPixiv: (path) => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PixivUploadPage(
+              uploadController: getIt<PixivUploadController>(),
+              settingsController: getIt<PixivSettingsController>(),
+              initialImagePaths: [path],
+            ),
+          ),
+        ),
       ),
       ImageToolsPage(
         controller: widget.imageToolsController,
         generationController: widget.generationController,
+      ),
+      PixivUploadPage(
+        uploadController: getIt<PixivUploadController>(),
+        settingsController: getIt<PixivSettingsController>(),
+        initialImagePaths: const [],
       ),
       SettingsPage(
         controller: widget.settingsController,
@@ -119,6 +138,11 @@ class _HomeShellState extends State<HomeShell> {
               icon: Icon(Icons.grid_view_outlined),
               selectedIcon: Icon(Icons.grid_view_rounded),
               label: '工具',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.upload_outlined),
+              selectedIcon: Icon(Icons.upload_rounded),
+              label: 'Pixiv',
             ),
             NavigationDestination(
               icon: Icon(Icons.settings_outlined),

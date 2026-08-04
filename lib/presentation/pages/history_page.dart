@@ -18,11 +18,13 @@ class HistoryPage extends StatefulWidget {
     required this.controller,
     required this.generationController,
     required this.onReuse,
+    required this.onPublishToPixiv,
   });
 
   final HistoryController controller;
   final GenerationController generationController;
   final VoidCallback onReuse;
+  final void Function(String imagePath) onPublishToPixiv;
 
   @override
   State<HistoryPage> createState() => _HistoryPageState();
@@ -202,6 +204,15 @@ class _HistoryPageState extends State<HistoryPage> {
                 onPressed: () => _saveToGallery(context, task.imagePath!),
                 icon: const Icon(Icons.save_alt_rounded),
                 label: const Text('保存到系统相册'),
+              ),
+            if (task.imagePath != null)
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  widget.onPublishToPixiv(task.imagePath!);
+                },
+                icon: const Icon(Icons.upload_rounded),
+                label: const Text('发布到 Pixiv'),
               ),
             OutlinedButton.icon(
               onPressed: () async {

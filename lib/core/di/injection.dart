@@ -25,6 +25,7 @@ import '../../data/api/native/services/native_user_service.dart';
 import '../../data/datasources/local/app_preferences.dart';
 import '../../data/datasources/local/generation_database.dart';
 import '../../data/datasources/local/llm_assistant_preferences.dart';
+import '../../data/datasources/local/pixiv_settings_preferences.dart';
 import '../../data/datasources/local/prompt_chat_preferences.dart';
 import '../../data/repositories/app_settings_repository_impl.dart';
 import '../../data/repositories/flutter_secure_credential_store.dart';
@@ -32,7 +33,17 @@ import '../../data/repositories/generation_history_repository_impl.dart';
 import '../../data/repositories/generation_repository_impl.dart';
 import '../../data/repositories/image_tools_repository_impl.dart';
 import '../../data/repositories/llm_assistant_settings_repository_impl.dart';
+import '../../data/api/pixiv/pixiv_api_service.dart';
 import '../../data/repositories/prompt_assistant_repository_impl.dart';
+import '../../data/repositories/pixiv_settings_repository_impl.dart';
+import '../../data/repositories/pixiv_upload_repository_impl.dart';
+import '../../domain/entities/pixiv_settings.dart';
+import '../../domain/repositories/pixiv_settings_repository.dart';
+import '../../domain/repositories/pixiv_upload_repository.dart';
+import '../../presentation/controllers/pixiv_settings_controller.dart';
+import '../../presentation/controllers/pixiv_upload_controller.dart';
+import '../queue/pixiv_upload_queue.dart';
+import '../storage/pixiv_image_cloaker.dart';
 import '../../domain/repositories/app_settings_repository.dart';
 import '../../domain/repositories/generation_history_repository.dart';
 import '../../domain/repositories/generation_repository.dart';
@@ -96,6 +107,9 @@ Future<void> _registerLocalStorage() async {
   getIt.registerSingleton<FlutterSecureStorage>(secureStorage);
   getIt.registerLazySingleton<SecureCredentialStore>(
     () => FlutterSecureCredentialStore(getIt()),
+  );
+  getIt.registerLazySingleton<PixivSettingsPreferences>(
+    () => PixivSettingsPreferences(getIt(), getIt()),
   );
 }
 
@@ -179,6 +193,12 @@ void _registerNetwork() {
   );
 }
 
+Future<void> _loadPixivSettings() async {
+  try {
+    await getIt<PixivSettingsController>().reload();
+  } catch (_) {}
+}
+
 void _registerApiServices() {
   final nativeDio = getIt<Dio>(instanceName: ServiceNames.nativeDio);
   final gatewayDio = getIt<Dio>(instanceName: ServiceNames.gatewayDio);
@@ -209,6 +229,9 @@ void _registerApiServices() {
   getIt.registerLazySingleton(() => GatewaySketchService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayColorizeService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayEmotionService(gatewayDio));
+
+  getIt.registerLazySingleton(() => PixivApiService());
+  getIt.registerLazySingleton(() => PixivImageCloaker());
 }
 
 void _registerRepositories() {
@@ -246,6 +269,12 @@ void _registerRepositories() {
       danbooruService: getIt(),
       credentialStore: getIt(),
     ),
+  );
+  getIt.registerLazySingleton<PixivSettingsRepository>(
+    () => PixivSettingsRepositoryImpl(getIt()),
+  );
+  getIt.registerLazySingleton<PixivUploadRepository>(
+    () => PixivUploadRepositoryImpl(getIt()),
   );
 }
 
@@ -313,4 +342,19 @@ Future<void> _registerControllers() async {
     ),
   );
   await getIt<HistoryController>().load();
+
+  getIt.registerSingleton<PixivSettingsController>(
+    PixivSettingsController(getIt(), PixivSettings.empty),
+  );
+  unawaited(_loadPixivSettings());
+  getIt.registerLazySingleton<PixivUploadQueue>(
+    () => PixivUploadQueue(
+      uploadRepository: getIt(),
+      settingsRepository: getIt(),
+      cloaker: getIt(),
+    ),
+  );
+  getIt.registerLazySingleton<PixivUploadController>(
+    () => PixivUploadController(getIt()),
+  );
 }
