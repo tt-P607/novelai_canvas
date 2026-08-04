@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/errors/error_message.dart';
 import '../controllers/pixiv_settings_controller.dart';
 import '../widgets/compact_snack_bar.dart';
+import '../widgets/pixiv_defaults_card.dart';
 import 'pixiv_login_page.dart';
 
 class PixivSettingsPage extends StatefulWidget {
@@ -155,43 +156,37 @@ class _PixivSettingsPageState extends State<PixivSettingsPage> {
                         ),
                         keyboardType: TextInputType.number,
                       ),
-                      const SizedBox(height: 8),
-                      SwitchListTile(
-                        title: const Text('默认 R18'),
-                        value: cur.r18Default,
-                        onChanged: (v) {
-                          widget.controller.save(cur.copyWith(r18Default: v));
-                        },
-                      ),
-                      SwitchListTile(
-                        title: const Text('允许他人编辑标签'),
-                        value: cur.allowTagEdit,
-                        onChanged: (v) {
-                          widget.controller.save(cur.copyWith(allowTagEdit: v));
-                        },
-                      ),
-                      SwitchListTile(
-                        title: const Text('剥离 NAI 元数据'),
-                        subtitle: const Text('移除 tEXt 块 + alpha LSB 清零'),
-                        value: cur.stripMetadata,
-                        onChanged: (v) {
-                          widget.controller.save(
-                            cur.copyWith(stripMetadata: v),
-                          );
-                        },
-                      ),
-                      SwitchListTile(
-                        title: const Text('启用 Tag 建议'),
-                        value: cur.suggestTagsEnabled,
-                        onChanged: (v) {
-                          widget.controller.save(
-                            cur.copyWith(suggestTagsEnabled: v),
-                          );
-                        },
-                      ),
                     ],
                   ),
                 ),
+              ),
+              const SizedBox(height: 12),
+              PixivDefaultsCard(
+                xRestrict: cur.xRestrictDefault,
+                aiType: cur.aiTypeDefault,
+                restrict: cur.restrictDefault,
+                allowComment: cur.allowCommentDefault,
+                original: cur.originalDefault,
+                allowTagEdit: cur.allowTagEdit,
+                stripMetadata: cur.stripMetadata,
+                suggestTagsEnabled: cur.suggestTagsEnabled,
+                onXRestrictChanged: (v) =>
+                    widget.controller.save(cur.copyWith(xRestrictDefault: v)),
+                onAiTypeChanged: (v) =>
+                    widget.controller.save(cur.copyWith(aiTypeDefault: v)),
+                onRestrictChanged: (v) =>
+                    widget.controller.save(cur.copyWith(restrictDefault: v)),
+                onAllowCommentChanged: (v) => widget.controller.save(
+                  cur.copyWith(allowCommentDefault: v),
+                ),
+                onOriginalChanged: (v) =>
+                    widget.controller.save(cur.copyWith(originalDefault: v)),
+                onAllowTagEditChanged: (v) =>
+                    widget.controller.save(cur.copyWith(allowTagEdit: v)),
+                onStripMetadataChanged: (v) =>
+                    widget.controller.save(cur.copyWith(stripMetadata: v)),
+                onSuggestTagsChanged: (v) =>
+                    widget.controller.save(cur.copyWith(suggestTagsEnabled: v)),
               ),
               const SizedBox(height: 16),
               FilledButton.icon(

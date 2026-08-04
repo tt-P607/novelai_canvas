@@ -9,6 +9,7 @@ import '../../domain/entities/pixiv_upload_task.dart';
 import '../controllers/pixiv_settings_controller.dart';
 import '../controllers/pixiv_upload_controller.dart';
 import '../widgets/compact_snack_bar.dart';
+import '../widgets/pixiv_publish_form.dart';
 import 'pixiv_queue_page.dart';
 import 'pixiv_settings_page.dart';
 
@@ -29,29 +30,14 @@ class PixivUploadPage extends StatefulWidget {
 }
 
 class _PixivUploadPageState extends State<PixivUploadPage> {
-  late final TextEditingController _title;
-  late final TextEditingController _caption;
-  late final TextEditingController _tags;
+  late final GlobalKey<PixivPublishFormState> _formKey;
   late List<String> _images;
-  bool _isR18 = false;
 
   @override
   void initState() {
     super.initState();
-    final s = widget.settingsController.settings;
-    _title = TextEditingController();
-    _caption = TextEditingController(text: s.captionPrefix);
-    _tags = TextEditingController(text: s.defaultTags.join(', '));
+    _formKey = GlobalKey<PixivPublishFormState>();
     _images = List.from(widget.initialImagePaths);
-    _isR18 = s.r18Default;
-  }
-
-  @override
-  void dispose() {
-    _title.dispose();
-    _caption.dispose();
-    _tags.dispose();
-    super.dispose();
   }
 
   @override
@@ -161,45 +147,9 @@ class _PixivUploadPageState extends State<PixivUploadPage> {
             label: const Text('从相册选图'),
           ),
           const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  TextField(
-                    controller: _title,
-                    decoration: const InputDecoration(
-                      labelText: '标题',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _caption,
-                    decoration: const InputDecoration(
-                      labelText: '正文',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _tags,
-                    decoration: const InputDecoration(
-                      labelText: '标签 (逗号分隔)',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    title: const Text('R18'),
-                    value: _isR18,
-                    onChanged: (v) => setState(() => _isR18 = v),
-                  ),
-                ],
-              ),
-            ),
+          PixivPublishForm(
+            key: _formKey,
+            settingsController: widget.settingsController,
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
@@ -230,7 +180,9 @@ class _PixivUploadPageState extends State<PixivUploadPage> {
       );
       return;
     }
-    if (_title.text.trim().isEmpty) {
+    final formValues = _formKey.currentState?.collect();
+    if (formValues == null) return;
+    if (formValues.title.isEmpty) {
       showCompactSnackBar(context, icon: Icons.edit_outlined, message: '请填写标题');
       return;
     }
@@ -243,19 +195,24 @@ class _PixivUploadPageState extends State<PixivUploadPage> {
       );
       return;
     }
-    final tags = _tags.text
-        .split(',')
-        .map((t) => t.trim())
-        .where((t) => t.isNotEmpty)
-        .toList();
     final task = PixivUploadTask(
       id: const Uuid().v4(),
       imagePaths: List.from(_images),
-      title: _title.text.trim(),
-      caption: _caption.text.trim(),
-      tags: tags,
-      isR18: _isR18,
+      title: formValues.title,
+      caption: formValues.caption,
+      tags: formValues.tags,
+      xRestrict: formValues.xRestrict,
+      aiType: formValues.aiType,
+      restrict: formValues.restrict,
+      allowComment: formValues.allowComment,
       allowTagEdit: s.allowTagEdit,
+      sexual: formValues.sexual,
+      attributes: formValues.attributes,
+      ratings: formValues.ratings,
+      titleTranslationEn: formValues.titleTranslationEn,
+      captionTranslationEn: formValues.captionTranslationEn,
+      responseAutoAccept: formValues.responseAutoAccept,
+      original: formValues.original,
       stripMetadata: s.stripMetadata,
       createdAt: DateTime.now(),
     );
@@ -265,12 +222,9 @@ class _PixivUploadPageState extends State<PixivUploadPage> {
       // This page lives in the bottom-nav shell (IndexedStack), not a pushed
       // route, so popping would leave the shell. Reset the form instead so the
       // user can queue another artwork without re-entering the page.
-      _title.clear();
-      _caption.clear();
-      _tags.clear();
+      _formKey.currentState?.reset();
       setState(() {
         _images.clear();
-        _isR18 = widget.settingsController.settings.r18Default;
       });
     } catch (e) {
       showCompactSnackBar(

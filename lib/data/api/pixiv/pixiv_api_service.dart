@@ -171,31 +171,45 @@ class PixivApiService {
     final dio = _buildDio(settings);
 
     final formMap = <String, dynamic>{
-      'aiType': 'aiGenerated',
-      'allowComment': 'true',
+      'aiType': switch (task.aiType) {
+        PixivAiType.human => 'notAiGenerated',
+        PixivAiType.aiGenerated => 'aiGenerated',
+      },
+      'allowComment': task.allowComment ? 'true' : 'false',
       'allowTagEdit': task.allowTagEdit ? 'true' : 'false',
-      'attributes[bl]': 'false',
-      'attributes[furry]': 'false',
-      'attributes[lo]': 'false',
-      'attributes[yuri]': 'false',
+      'attributes[bl]': task.attributes.bl ? 'true' : 'false',
+      'attributes[furry]': task.attributes.furry ? 'true' : 'false',
+      'attributes[lo]': task.attributes.lo ? 'true' : 'false',
+      'attributes[yuri]': task.attributes.yuri ? 'true' : 'false',
       'caption': task.caption,
-      'captionTranslations[en]': '',
-      'original': 'true',
-      'ratings[antisocial]': 'false',
-      'ratings[drug]': 'false',
-      'ratings[religion]': 'false',
-      'ratings[thoughts]': 'false',
-      'ratings[violent]': 'false',
-      'responseAutoAccept': 'false',
-      'restrict': 'public',
+      'captionTranslations[en]': task.captionTranslationEn,
+      'original': task.original ? 'true' : 'false',
+      'ratings[antisocial]': task.ratings.antisocial ? 'true' : 'false',
+      'ratings[drug]': task.ratings.drug ? 'true' : 'false',
+      'ratings[religion]': task.ratings.religion ? 'true' : 'false',
+      'ratings[thoughts]': task.ratings.thoughts ? 'true' : 'false',
+      'ratings[violent]': task.ratings.violent ? 'true' : 'false',
+      'responseAutoAccept': task.responseAutoAccept ? 'true' : 'false',
+      'restrict': switch (task.restrict) {
+        PixivRestrict.public => 'public',
+        PixivRestrict.myFans => 'myFans',
+        PixivRestrict.myFriends => 'myFriends',
+      },
       'suggestedTags[]': const <String>['女の子'],
       'tags[]': task.tags,
       'title': task.title,
-      'titleTranslations[en]': '',
-      'xRestrict': task.isR18 ? 'r18' : 'general',
+      'titleTranslations[en]': task.titleTranslationEn,
+      'xRestrict': switch (task.xRestrict) {
+        PixivXRestrict.general => 'general',
+        PixivXRestrict.r18 => 'r18',
+        PixivXRestrict.r18g => 'r18g',
+      },
     };
-    if (!task.isR18) {
+    // Pixiv forces sexual=false for all-ages works; only R-18/R-18G may opt in.
+    if (task.xRestrict == PixivXRestrict.general) {
       formMap['sexual'] = 'false';
+    } else {
+      formMap['sexual'] = task.sexual ? 'true' : 'false';
     }
 
     for (int i = 0; i < task.imagePaths.length; i++) {
