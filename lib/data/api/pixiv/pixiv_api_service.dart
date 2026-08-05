@@ -264,12 +264,20 @@ class PixivApiService {
     }
 
     if (data['error'] == true) {
-      final errors = data['body']?['errors'];
+      // body may be a String (e.g. a reCAPTCHA/not-logged-in message), not a
+      // Map — guard the subscript so it cannot throw
+      // "type 'String' is not a subtype of type 'int' of 'index'".
+      final body = data['body'];
+      final bodyMap = body is Map ? Map<String, dynamic>.from(body) : null;
+      final errors = bodyMap?['errors'];
       if (errors is Map && errors['gRecaptchaResponse'] != null) {
         throw const PixivCooldownException('投稿冷却（gRecaptcha），请稍后再试');
       }
       final msg =
-          data['message']?.toString() ?? errors?.toString() ?? 'unknown error';
+          data['message']?.toString() ??
+          (body is String && body.isNotEmpty ? body : null) ??
+          errors?.toString() ??
+          'unknown error';
       if (msg.contains('csrf') ||
           msg.contains('CSRF') ||
           msg.contains('未登录') ||
@@ -279,7 +287,10 @@ class PixivApiService {
       throw PixivUploadException('上传失败: $msg', raw: data);
     }
 
-    final convertKey = data['body']?['convertKey']?.toString();
+    final body = data['body'];
+    final convertKey = body is Map
+        ? body['convertKey']?.toString()
+        : (body is String ? body : null);
     if (convertKey == null || convertKey.isEmpty) {
       throw PixivUploadException('未获取到 convertKey', raw: data);
     }

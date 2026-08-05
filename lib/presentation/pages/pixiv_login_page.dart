@@ -71,6 +71,12 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
     // Login form host: keep waiting until auth redirects to a Pixiv domain.
     if (host == 'accounts.pixiv.net') return;
 
+    // Page is fully loaded here — (re)install the header hook so a token
+    // injected by Pixiv's SPA interceptor is captured on this platform too.
+    // On iOS the onPageStarted injection can race the page script, so this
+    // second install at onPageFinished is what makes iOS work.
+    _installCsrfHook();
+
     // Logged-in hosts (www.pixiv.net / touch.pixiv.net / i.pximg.net).
     final loggedIn =
         host == 'www.pixiv.net' ||
