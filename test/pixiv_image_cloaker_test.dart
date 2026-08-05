@@ -114,4 +114,49 @@ void main() {
       expect(meta.stealthJson, isNull);
     },
   );
+
+  group('PixivMetadataParser', () {
+    test('parses flat NAI payload into readable fields', () {
+      const json =
+          '{"prompt":"masterpiece, 1girl","uc":"lowres, bad hands",'
+          '"sampler":"k_euler_ancestral","steps":28,"seed":629328648,'
+          '"width":832,"height":1216,"scale":5.0,"noise_schedule":"karras",'
+          '"signed_hash":"vs09nedmq8yb=="}';
+      final meta = PixivMetadataParser.parse(json);
+      expect(meta.prompt, 'masterpiece, 1girl');
+      expect(meta.negativePrompt, 'lowres, bad hands');
+      expect(meta.sampler, 'k_euler_ancestral');
+      expect(meta.steps, 28);
+      expect(meta.seed, 629328648);
+      expect(meta.width, 832);
+      expect(meta.height, 1216);
+      expect(meta.scale, 5.0);
+      expect(meta.noiseSchedule, 'karras');
+      expect(meta.signedHash, 'vs09nedmq8yb==');
+      expect(meta.stealthJson, json);
+    });
+
+    test('parses v4 nested layout with char captions', () {
+      const json =
+          '{"v4_prompt":{"caption":{"base_caption":"masterwork, best quality",'
+          '"char_captions":[{"char_caption":"elysia, 1girl, long hair",'
+          '"centers":[{"x":0.5,"y":0.5}]}]}},'
+          '"v4_negative_prompt":{"caption":{"base_caption":"lowres, bad anatomy"}},'
+          '"sampler":"k_euler","steps":28,"seed":1,"width":832,"height":1216,'
+          '"scale":5.0,"signed_hash":"abc=="}';
+      final meta = PixivMetadataParser.parse(json);
+      expect(meta.prompt, contains('masterwork, best quality'));
+      expect(meta.prompt, contains('elysia, 1girl, long hair'));
+      expect(meta.negativePrompt, 'lowres, bad anatomy');
+      expect(meta.sampler, 'k_euler');
+      expect(meta.steps, 28);
+      expect(meta.signedHash, 'abc==');
+    });
+
+    test('returns raw-only metadata for invalid JSON', () {
+      final meta = PixivMetadataParser.parse('not-json');
+      expect(meta.stealthJson, 'not-json');
+      expect(meta.prompt, isNull);
+    });
+  });
 }

@@ -20,8 +20,13 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
   late final WebViewController _controller;
   bool _loading = true;
   bool _captured = false;
-  bool _redirectedToCreate = false;
   Timer? _retryTimer;
+  int _retryCount = 0;
+
+  /// Latest cookie/token captured while browsing; kept even when the session
+  /// is not fully confirmed so the user can finish manually.
+  String? _capturedCookie;
+  String? _capturedCsrf;
 
   @override
   void dispose() {
@@ -49,10 +54,11 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
       ..loadRequest(Uri.parse('https://accounts.pixiv.net/login'));
   }
 
-  /// Handles a finished page load. On a logged-in Pixiv domain it redirects to
-  /// the illustration upload page (where the CSRF token is guaranteed to exist)
-  /// once, then captures the Cookie + token. This delays the capture until the
-  /// upload page has loaded so the token is actually present.
+  /// Attempts to capture the session Cookie + CSRF token once the user reaches
+  /// a Pixiv domain. Unlike the previous logic, it does not block on a single
+  /// `sessionid` cookie name or on a specific upload-page path — landing on
+  /// www.pixiv.net is enough, and it captures even when the token is empty so
+  /// the user can fill it in from the settings page afterwards.
   Future<void> _handlePageFinished(String url) async {
     if (_captured) return;
     final uri = Uri.tryParse(url);
@@ -69,19 +75,8 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
         host == 'i.pximg.net';
     if (!loggedIn) return;
 
-    // First landing after login is usually the home page, which may not carry
-    // the token; hop to the upload page once so meta/localStorage has it.
-    final path = uri.path;
-    if (path != '/illustration/create' && !_redirectedToCreate) {
-      _redirectedToCreate = true;
-      await _controller.loadRequest(
-        Uri.parse('https://www.pixiv.net/illustration/create'),
-      );
-      return;
-    }
-
-    // Merge cookies from the domains Pixiv uses so the session cookie
-    // (sessionid, HttpOnly) is not missed if it lives under a parent domain.
+    // Merge cookies from the domains Pixiv uses so the session cookie is not
+    // missed if it lives under a parent domain.
     final cookies = <WebViewCookie>[];
     for (final domain in const [
       'https://www.pixiv.net',
@@ -102,21 +97,23 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
       }
     }
 
-    // Pixiv's real login cookie is HttpOnly "sessionid". Without it the user
-    // is not logged in yet — keep waiting instead of returning garbage. The
-    // session cookie may be written a beat after onPageFinished, so retry a
-    // few times before giving up.
-    final hasSession = cookies.any(
-      (c) => c.name.toLowerCase() == 'sessionid' && c.value.isNotEmpty,
-    );
+    // A Pixiv login session is present once we land on www.pixiv.net with any
+    // cookies. Requiring the HttpOnly "sessionid" specifically was too brittle
+    // on Android — the cookie manager may miss it while the user is clearly
+    // logged in (they reached the upload page). Retry a bounded number of
+    // times for cookies that arrive a beat after onPageFinished, then give the
+    // user control via the app-bar "完成" button / back.
+    final hasSession = cookies.isNotEmpty;
     if (!hasSession) {
-      _retryTimer?.cancel();
-      _retryTimer = Timer(const Duration(seconds: 2), () async {
-        if (!mounted || _captured) return;
-        // Re-run against the current page URL; upload page may have moved on.
-        final current = await _controller.currentUrl();
-        if (current != null) await _handlePageFinished(current);
-      });
+      if (_retryCount < 5) {
+        _retryCount++;
+        _retryTimer?.cancel();
+        _retryTimer = Timer(const Duration(seconds: 2), () async {
+          if (!mounted || _captured) return;
+          final current = await _controller.currentUrl();
+          if (current != null) await _handlePageFinished(current);
+        });
+      }
       return;
     }
     _retryTimer?.cancel();
@@ -128,11 +125,38 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
     // page directly first; fall back to scanning cookies as a safety net.
     final csrf = await _extractCsrfToken();
 
+    _finish(cookieHeader, csrf);
+  }
+
+  /// Pops with the captured credentials, or null if none were captured.
+  void _finish(String cookie, String csrf) {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _capturedCookie = cookie;
+    _capturedCsrf = csrf;
+    if (_captured) return;
+    _captured = true;
+    if (mounted) {
+      Navigator.pop(context, PixivLoginResult(cookie: cookie, csrfToken: csrf));
+    }
+  }
+
+  /// Manual finish: pops with whatever was captured (may be null when the user
+  /// never reached a logged-in Pixiv page).
+  void _finishManual() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    if (_captured) return;
     _captured = true;
     if (mounted) {
       Navigator.pop(
         context,
-        PixivLoginResult(cookie: cookieHeader, csrfToken: csrf),
+        _capturedCookie == null
+            ? null
+            : PixivLoginResult(
+                cookie: _capturedCookie!,
+                csrfToken: _capturedCsrf ?? '',
+              ),
       );
     }
   }
@@ -198,34 +222,44 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0E0C15),
-      appBar: AppBar(
-        title: const Text('Pixiv 登录'),
-        actions: [
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: Center(
-                child: SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _finishManual();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0E0C15),
+        appBar: AppBar(
+          title: const Text('Pixiv 登录'),
+          actions: [
+            TextButton(
+              onPressed: _captured ? null : _finishManual,
+              child: const Text('完成登录'),
+            ),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.only(right: 16),
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
               ),
-            ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller),
-          if (_loading)
-            const Positioned.fill(
-              child: ColoredBox(
-                color: Color(0xFF0E0C15),
-                child: Center(child: CircularProgressIndicator()),
+          ],
+        ),
+        body: Stack(
+          children: [
+            WebViewWidget(controller: _controller),
+            if (_loading)
+              const Positioned.fill(
+                child: ColoredBox(
+                  color: Color(0xFF0E0C15),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -10,18 +10,128 @@ import 'dart:typed_data';
 
 /// NAI metadata extracted from a PNG before upload (the inverse of [cloak]).
 ///
-/// [textChunks] holds the plain tEXt/iTXt blocks read directly from the file,
-/// while [stealthJson] is the decompressed `stealth_pngcomp` payload hidden in
-/// the alpha channel LSBs (gzip-compressed JSON with the full prompt,
-/// parameters and model signature).
+/// [textChunks] holds the plain tEXt/iTXt blocks read directly from the file.
+/// [stealthJson] is the decompressed `stealth_pngcomp` payload hidden in the
+/// alpha channel LSBs (gzip-compressed JSON), while [prompt]/[negativePrompt]/
+/// [sampler]/... are the same payload parsed into human-readable fields.
 class PixivImageMetadata {
   const PixivImageMetadata({
     required this.textChunks,
     required this.stealthJson,
+    this.prompt,
+    this.negativePrompt,
+    this.sampler,
+    this.steps,
+    this.seed,
+    this.width,
+    this.height,
+    this.scale,
+    this.noiseSchedule,
+    this.signedHash,
   });
 
   final Map<String, String> textChunks;
   final String? stealthJson;
+
+  final String? prompt;
+  final String? negativePrompt;
+  final String? sampler;
+  final int? steps;
+  final int? seed;
+  final int? width;
+  final int? height;
+  final double? scale;
+  final String? noiseSchedule;
+  final String? signedHash;
+}
+
+/// Parses a NAI `stealth_pngcomp` JSON payload into displayable fields.
+/// Understands both the flat layout (prompt/uc/sampler/steps/seed/...) and the
+/// v4 nested layout (`v4_prompt.caption.base_caption` + `char_captions`).
+class PixivMetadataParser {
+  const PixivMetadataParser();
+
+  static PixivImageMetadata parse(String json) {
+    final dynamic raw;
+    try {
+      raw = jsonDecode(json);
+    } catch (_) {
+      return PixivImageMetadata(textChunks: const {}, stealthJson: json);
+    }
+    if (raw is! Map) {
+      return PixivImageMetadata(textChunks: const {}, stealthJson: json);
+    }
+    final data = Map<String, dynamic>.from(raw);
+
+    return PixivImageMetadata(
+      textChunks: const {},
+      stealthJson: json,
+      prompt: _prompt(data),
+      negativePrompt: _negativePrompt(data),
+      sampler: _string(data, 'sampler'),
+      steps: _int(data, 'steps'),
+      seed: _int(data, 'seed'),
+      width: _int(data, 'width'),
+      height: _int(data, 'height'),
+      scale: _double(data, 'scale'),
+      noiseSchedule: _string(data, 'noise_schedule'),
+      signedHash: _string(data, 'signed_hash'),
+    );
+  }
+
+  /// Top-level `prompt`, or the v4 base caption plus each character caption.
+  static String? _prompt(Map<String, dynamic> data) {
+    final flat = _string(data, 'prompt');
+    if (flat != null && flat.isNotEmpty) return flat;
+    final v4 = data['v4_prompt'];
+    if (v4 is Map) {
+      final parts = <String>[];
+      final caption = v4['caption'];
+      if (caption is Map) {
+        final base = caption['base_caption'];
+        if (base is String && base.isNotEmpty) parts.add(base);
+        final chars = caption['char_captions'];
+        if (chars is List) {
+          for (final c in chars) {
+            if (c is Map && c['char_caption'] is String) {
+              parts.add(c['char_caption'] as String);
+            }
+          }
+        }
+      }
+      if (parts.isNotEmpty) return parts.join('\n');
+    }
+    return flat;
+  }
+
+  /// Top-level `uc`, or the v4 negative caption.
+  static String? _negativePrompt(Map<String, dynamic> data) {
+    final flat = _string(data, 'uc');
+    if (flat != null && flat.isNotEmpty) return flat;
+    final v4 = data['v4_negative_prompt'];
+    if (v4 is Map && v4['caption'] is Map) {
+      final base = (v4['caption'] as Map)['base_caption'];
+      if (base is String && base.isNotEmpty) return base;
+    }
+    return flat;
+  }
+
+  static String? _string(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    return value is String && value.isNotEmpty ? value : null;
+  }
+
+  static int? _int(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    return value is int ? value : null;
+  }
+
+  static double? _double(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return null;
+  }
 }
 
 /// Strips NAI metadata from a PNG before uploading to Pixiv, and reads it back
@@ -124,7 +234,24 @@ PixivImageMetadata _extractIsolate(Uint8List pngBytes) {
     }
   }
 
-  return PixivImageMetadata(textChunks: textChunks, stealthJson: stealthJson);
+  if (stealthJson == null) {
+    return PixivImageMetadata(textChunks: textChunks, stealthJson: null);
+  }
+  final parsed = PixivMetadataParser.parse(stealthJson);
+  return PixivImageMetadata(
+    textChunks: textChunks,
+    stealthJson: parsed.stealthJson,
+    prompt: parsed.prompt,
+    negativePrompt: parsed.negativePrompt,
+    sampler: parsed.sampler,
+    steps: parsed.steps,
+    seed: parsed.seed,
+    width: parsed.width,
+    height: parsed.height,
+    scale: parsed.scale,
+    noiseSchedule: parsed.noiseSchedule,
+    signedHash: parsed.signedHash,
+  );
 }
 
 /// Collects the alpha LSBs into a byte stream following NAI's layout: the

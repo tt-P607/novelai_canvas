@@ -365,13 +365,47 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
     ),
   );
 
-  /// Renders the NAI metadata extracted from the source image.
+  /// Renders the NAI metadata extracted from the source image as readable
+  /// fields, with the raw JSON payload collapsed behind an expander.
   Widget _metadataCard() {
     final meta = controller.metadata!;
     final chunks = meta.textChunks.entries.toList();
     final hasChunks = chunks.isNotEmpty;
-    final hasStealth = meta.stealthJson != null && meta.stealthJson!.isNotEmpty;
-    final hasContent = hasChunks || hasStealth;
+    final hasJson = meta.stealthJson != null && meta.stealthJson!.isNotEmpty;
+    final hasReadable =
+        meta.prompt != null ||
+        meta.negativePrompt != null ||
+        meta.sampler != null ||
+        meta.steps != null ||
+        meta.seed != null ||
+        meta.width != null ||
+        meta.height != null ||
+        meta.scale != null ||
+        meta.noiseSchedule != null ||
+        meta.signedHash != null;
+    if (!hasReadable && !hasChunks && !hasJson) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            '未检测到 NAI 元数据。',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+      );
+    }
+
+    final params = <(String, String)>[
+      if (meta.sampler != null) ('采样器', meta.sampler!),
+      if (meta.steps != null) ('步数', '${meta.steps}'),
+      if (meta.seed != null) ('种子', '${meta.seed}'),
+      if (meta.width != null && meta.height != null)
+        ('尺寸', '${meta.width} × ${meta.height}'),
+      if (meta.scale != null) ('CFG', '${meta.scale}'),
+      if (meta.noiseSchedule != null) ('噪声调度', meta.noiseSchedule!),
+      if (meta.signedHash != null) ('模型签名', meta.signedHash!),
+    ];
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -379,37 +413,75 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('提取的元数据', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            if (!hasContent)
-              const Text('未检测到 NAI 元数据。')
-            else ...[
-              if (hasStealth) ...[
-                const Text(
-                  '隐写负载',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                SelectableText(
-                  meta.stealthJson!,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (hasChunks) ...[
-                const Text(
-                  '文本块',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                for (final entry in chunks)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: SelectableText(
-                      '${entry.key}: ${entry.value}',
-                      style: Theme.of(context).textTheme.bodySmall,
+            const SizedBox(height: 12),
+            if (meta.prompt != null) ...[
+              const Text('提示词', style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              SelectableText(
+                meta.prompt!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (meta.negativePrompt != null) ...[
+              const Text('负面词', style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              SelectableText(
+                meta.negativePrompt!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (params.isNotEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final (label, value) in params)
+                    Chip(
+                      visualDensity: VisualDensity.compact,
+                      label: Text('$label $value'),
                     ),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (hasChunks) ...[
+              const Text('文本块', style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              for (final entry in chunks)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: SelectableText(
+                    '${entry.key}: ${entry.value}',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-              ],
+                ),
+              const SizedBox(height: 10),
+            ],
+            if (hasJson) ...[
+              Theme(
+                data: Theme.of(
+                  context,
+                ).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  title: const Text(
+                    '原始 JSON',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  shape: const Border(),
+                  collapsedShape: const Border(),
+                  childrenPadding: const EdgeInsets.only(bottom: 8),
+                  children: [
+                    SelectableText(
+                      meta.stealthJson!,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ],
         ),
