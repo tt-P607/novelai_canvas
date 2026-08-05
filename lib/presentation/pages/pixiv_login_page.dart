@@ -42,8 +42,11 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
       ..setBackgroundColor(const Color(0xFF0E0C15))
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (_) {
+          onPageStarted: (url) {
             if (mounted) setState(() => _loading = true);
+            // Re-install the header-capture hook on every navigation so a
+            // freshly booted Pixiv SPA can stash its x-csrf-token.
+            _installCsrfHook();
           },
           onPageFinished: (url) async {
             if (mounted) setState(() => _loading = false);
@@ -165,11 +168,97 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
     }
   }
 
-  /// Pulls the CSRF token from the logged-in page. Pixiv exposes it as a SPA
-  /// global (`window.pixiv.context.token`), in localStorage
-  /// (`pixiv.akana.cookie` / `x-csrf-token`), or in a `<meta>` element. Cookie
-  /// scanning is the last resort because the token is normally not a cookie.
+  /// Injects a hook that records any `x-csrf-token` request header Pixiv's SPA
+  /// sends, then triggers a harmless same-origin request so the framework
+  /// attaches the token. The captured value is stored on `window.__nai_csrf`.
+  void _installCsrfHook() {
+    try {
+      _controller.runJavaScript(r'''
+        (() => {
+          if (window.__nai_csrf_hooked) return;
+          window.__nai_csrf_hooked = true;
+          const capture = (token) => {
+            if (token && token.length > 8 && !window.__nai_csrf) {
+              window.__nai_csrf = token;
+            }
+          };
+          const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+          XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+            if (name && name.toLowerCase() === 'x-csrf-token') capture(value);
+            return origSetHeader.call(this, name, value);
+          };
+          const origFetch = window.fetch;
+          window.fetch = function(input, init) {
+            try {
+              const headers = (init && init.headers) || {};
+              const getHeader = (h) => {
+                if (h instanceof Headers) return h.get('x-csrf-token');
+                if (typeof h.get === 'function') { try { return h.get('x-csrf-token'); } catch (e) {} }
+                if (h['x-csrf-token']) return h['x-csrf-token'];
+                return null;
+              };
+              capture(getHeader(headers));
+            } catch (e) {}
+            return origFetch.apply(this, arguments);
+          };
+          // Trigger a same-origin request so Pixiv's interceptor adds the header.
+          try {
+            fetch('/ajax/user/extra', { credentials: 'include' })
+              .catch(() => {});
+          } catch (e) {}
+        })()
+      ''');
+    } catch (_) {
+      // Hook installation is best-effort; static probing still runs below.
+    }
+  }
+
+  /// Reads the token stashed on `window.__nai_csrf` by the request-header hook.
+  Future<String> _readCsrfFromHook() async {
+    try {
+      final js =
+          r'''
+        (() => {
+          return window.__nai_csrf || '';
+        })()
+      '''
+              .trim();
+      final result = await _controller.runJavaScriptReturningResult(js);
+      return _decodeJsString(result);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Android JSON-encodes a JS string return value (arrives quoted, e.g.
+  /// `"abc"` or `""`), while iOS returns it verbatim. Decode quoted values so
+  /// the token is clean on both platforms.
+  String _decodeJsString(Object? result) {
+    if (result is! String) return '';
+    final raw = result.trim();
+    if (raw.isEmpty || raw == 'null') return '';
+    if (raw.length >= 2 &&
+        ((raw.startsWith('"') && raw.endsWith('"')) ||
+            (raw.startsWith("'") && raw.endsWith("'")))) {
+      try {
+        return jsonDecode(raw) as String;
+      } catch (_) {
+        return raw.substring(1, raw.length - 1);
+      }
+    }
+    return raw;
+  }
+
+  /// Reads a token captured by the request-header hook, waiting briefly for a
+  /// triggered AJAX to complete; falls back to static DOM/localStorage probing.
   Future<String> _extractCsrfToken() async {
+    // Give the triggered AJAX a moment to attach the header before probing.
+    for (var i = 0; i < 4; i++) {
+      final hooked = await _readCsrfFromHook();
+      if (hooked.isNotEmpty) return hooked;
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+    }
+
     try {
       final js =
           r'''
@@ -210,23 +299,8 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
       '''
               .trim();
       final result = await _controller.runJavaScriptReturningResult(js);
-      // Android JSON-encodes the JS return value (a string arrives quoted,
-      // e.g. "abc" or ""), while iOS returns it verbatim. Decode quoted values
-      // so the token is clean on both platforms.
-      String? token;
-      if (result is String) {
-        final raw = result.trim();
-        if (raw.isEmpty || raw == 'null') {
-          token = '';
-        } else if (raw.length >= 2 &&
-            ((raw.startsWith('"') && raw.endsWith('"')) ||
-                (raw.startsWith("'") && raw.endsWith("'")))) {
-          token = jsonDecode(raw) as String;
-        } else {
-          token = raw;
-        }
-      }
-      if (token != null && token.isNotEmpty) return token;
+      final token = _decodeJsString(result);
+      if (token.isNotEmpty) return token;
     } catch (_) {
       // WebView scripting unavailable (e.g. restricted platform); fall through.
     }
