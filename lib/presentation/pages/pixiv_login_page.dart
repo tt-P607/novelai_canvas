@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -161,8 +162,23 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
       '''
               .trim();
       final result = await _controller.runJavaScriptReturningResult(js);
-      final token = result.toString().trim();
-      if (token.isNotEmpty && token != 'null') return token;
+      // Android JSON-encodes the JS return value (a string arrives quoted,
+      // e.g. "abc" or ""), while iOS returns it verbatim. Decode quoted values
+      // so the token is clean on both platforms.
+      String? token;
+      if (result is String) {
+        final raw = result.trim();
+        if (raw.isEmpty || raw == 'null') {
+          token = '';
+        } else if (raw.length >= 2 &&
+            ((raw.startsWith('"') && raw.endsWith('"')) ||
+                (raw.startsWith("'") && raw.endsWith("'")))) {
+          token = jsonDecode(raw) as String;
+        } else {
+          token = raw;
+        }
+      }
+      if (token != null && token.isNotEmpty) return token;
     } catch (_) {
       // WebView scripting unavailable (e.g. restricted platform); fall through.
     }

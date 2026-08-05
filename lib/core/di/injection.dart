@@ -315,6 +315,7 @@ Future<void> _registerControllers() async {
       imageStore: getIt(),
       historyRepository: getIt(),
       historyController: getIt(),
+      cloaker: getIt(),
       onAnlasConsumed: () => getIt<GenerationController>().refreshAnlas(),
     ),
   );

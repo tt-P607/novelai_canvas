@@ -10,6 +10,7 @@ import '../../core/errors/error_message.dart';
 import '../../core/network/backend_mode.dart';
 import '../../core/storage/generation_image_store.dart';
 import '../../core/storage/image_size_reader.dart';
+import '../../core/storage/pixiv_image_cloaker.dart';
 import '../../domain/entities/director_emotion.dart';
 import '../../domain/entities/generation_task.dart';
 import '../../domain/repositories/generation_history_repository.dart';
@@ -22,18 +23,21 @@ class ImageToolsController extends ChangeNotifier {
     required GenerationImageStore imageStore,
     required GenerationHistoryRepository historyRepository,
     required HistoryController historyController,
+    PixivImageCloaker? cloaker,
     Uuid uuid = const Uuid(),
     this.onAnlasConsumed,
   }) : _repository = repository,
        _imageStore = imageStore,
        _historyRepository = historyRepository,
        _historyController = historyController,
+       _cloaker = cloaker,
        _uuid = uuid;
 
   final ImageToolsRepository _repository;
   final GenerationImageStore _imageStore;
   final GenerationHistoryRepository _historyRepository;
   final HistoryController _historyController;
+  final PixivImageCloaker? _cloaker;
   final Uuid _uuid;
 
   /// Invoked after a billed tool (upscale / director) completes so the caller
@@ -52,6 +56,9 @@ class ImageToolsController extends ChangeNotifier {
   Uint8List? resultBytes;
   String? resultPath;
   int? anlasCost;
+
+  /// NAI metadata read from the source image; set by [extractMetadata].
+  PixivImageMetadata? metadata;
 
   Future<void> setSourceImage(String? path) async {
     sourceImagePath = path;
@@ -194,6 +201,80 @@ class ImageToolsController extends ChangeNotifier {
       selectedEmotion.value,
       addition,
     ].where((value) => value.isNotEmpty).join(', ');
+  }
+
+  /// Reads NAI metadata from the source image (plain tEXt chunks + alpha-LSB
+  /// gzip `stealth_pngcomp`). Pure client-side, no Anlas. The result is
+  /// exposed on [metadata] for display.
+  Future<void> extractMetadata() async {
+    final cloaker = _cloaker;
+    final path = sourceImagePath;
+    if (cloaker == null) {
+      errorMessage = '元数据提取不可用。';
+      notifyListeners();
+      return;
+    }
+    if (path == null || path.isEmpty) {
+      errorMessage = '请先选择源图片。';
+      notifyListeners();
+      return;
+    }
+    isRunning = true;
+    errorMessage = null;
+    metadata = null;
+    resultBytes = null;
+    resultPath = null;
+    anlasCost = null;
+    notifyListeners();
+    try {
+      metadata = await cloaker.extractMetadata(path);
+    } catch (error) {
+      errorMessage = friendlyErrorMessage(error);
+    } finally {
+      isRunning = false;
+      notifyListeners();
+    }
+  }
+
+  /// Strips NAI metadata (PNG tEXt chunks + alpha LSB steganography) from the
+  /// source image. Pure client-side — no network, no Anlas. The result lands
+  /// in [resultBytes]/[resultPath] so the comparison card and gallery save
+  /// work as usual.
+  Future<void> stripMetadata() async {
+    final cloaker = _cloaker;
+    final path = sourceImagePath;
+    if (cloaker == null) {
+      errorMessage = '元数据剥离不可用。';
+      notifyListeners();
+      return;
+    }
+    if (path == null || path.isEmpty) {
+      errorMessage = '请先选择源图片。';
+      notifyListeners();
+      return;
+    }
+    isRunning = true;
+    errorMessage = null;
+    resultBytes = null;
+    resultPath = null;
+    anlasCost = null;
+    notifyListeners();
+    try {
+      final strippedPath = await cloaker.cloak(path);
+      final bytes = await File(strippedPath).readAsBytes();
+      final stored = await _imageStore.save(
+        taskId: 'cloak_${_uuid.v4()}',
+        bytes: bytes,
+        extension: 'png',
+      );
+      resultBytes = bytes;
+      resultPath = stored.imagePath;
+    } catch (error) {
+      errorMessage = friendlyErrorMessage(error);
+    } finally {
+      isRunning = false;
+      notifyListeners();
+    }
   }
 
   Future<void> _run(Future<ImageToolResult> Function() action) async {

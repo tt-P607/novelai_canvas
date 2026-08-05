@@ -77,11 +77,13 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
                 children: [
                   _sourceCard(),
                   const SizedBox(height: 16),
+                  _stripMetadataCard(),
+                  const SizedBox(height: 16),
+                  _compressCard(),
+                  const SizedBox(height: 16),
                   _upscaleCard(),
                   const SizedBox(height: 16),
                   _directorCard(),
-                  const SizedBox(height: 16),
-                  _compressCard(),
                   if (controller.errorMessage != null) ...[
                     const SizedBox(height: 12),
                     Card(
@@ -95,6 +97,10 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
                   if (controller.resultBytes != null) ...[
                     const SizedBox(height: 16),
                     _comparisonCard(),
+                  ],
+                  if (controller.metadata != null) ...[
+                    const SizedBox(height: 16),
+                    _metadataCard(),
                   ],
                 ],
               ),
@@ -314,6 +320,102 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
       ),
     ),
   );
+
+  /// Local-only NAI metadata tools. Extracting reads the tEXt chunks plus the
+  /// alpha-LSB gzip payload; stripping scrubs both. Mirrors the Pixiv upload
+  /// "剥离 NAI 元数据" toggle so users can inspect/scrub a PNG anywhere.
+  Widget _stripMetadataCard() => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('NAI 元数据', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          const Text(
+            '读取或移除 PNG 的 tEXt 块与 alpha 通道 LSB 隐写（NAI 提示词、参数与模型签名）。'
+            '纯客户端操作，不消耗 Anlas、不走网络。',
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: controller.isRunning
+                      ? null
+                      : controller.extractMetadata,
+                  icon: const Icon(Icons.manage_search_rounded),
+                  label: const Text('提取'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: controller.isRunning
+                      ? null
+                      : controller.stripMetadata,
+                  icon: const Icon(Icons.cleaning_services_rounded),
+                  label: const Text('剥离'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+
+  /// Renders the NAI metadata extracted from the source image.
+  Widget _metadataCard() {
+    final meta = controller.metadata!;
+    final chunks = meta.textChunks.entries.toList();
+    final hasChunks = chunks.isNotEmpty;
+    final hasStealth = meta.stealthJson != null && meta.stealthJson!.isNotEmpty;
+    final hasContent = hasChunks || hasStealth;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('提取的元数据', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            if (!hasContent)
+              const Text('未检测到 NAI 元数据。')
+            else ...[
+              if (hasStealth) ...[
+                const Text(
+                  '隐写负载',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                SelectableText(
+                  meta.stealthJson!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (hasChunks) ...[
+                const Text(
+                  '文本块',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                for (final entry in chunks)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: SelectableText(
+                      '${entry.key}: ${entry.value}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _upscaleCard() => Card(
     child: ListTile(
