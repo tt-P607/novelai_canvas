@@ -45,27 +45,59 @@ class PixivImageMetadata {
   final String? signedHash;
 }
 
-/// Parses a NAI `stealth_pngcomp` JSON payload into displayable fields.
-/// Understands both the flat layout (prompt/uc/sampler/steps/seed/...) and the
-/// v4 nested layout (`v4_prompt.caption.base_caption` + `char_captions`).
+/// Parses NAI metadata into displayable fields. NAI stores its payload either
+/// in the PNG tEXt `Comment` chunk (a JSON string — the default) or in the
+/// alpha-LSB `stealth_pngcomp` payload. Both are merged, with the `Comment`
+/// chunk taking priority. Understands the flat layout
+/// (prompt/uc/sampler/steps/seed/...) and the v4 nested layout
+/// (`v4_prompt.caption.base_caption` + `char_captions`).
 class PixivMetadataParser {
   const PixivMetadataParser();
 
   static PixivImageMetadata parse(String json) {
-    final dynamic raw;
-    try {
-      raw = jsonDecode(json);
-    } catch (_) {
-      return PixivImageMetadata(textChunks: const {}, stealthJson: json);
+    return parseWithChunks(const {}, stealthJson: json);
+  }
+
+  /// Parses from PNG text chunks (tEXt/iTXt) and an optional alpha-LSB JSON
+  /// payload. The tEXt `Comment` chunk usually holds the full NAI JSON string;
+  /// when absent, the stealth payload is used. Other chunks like `Title` /
+  /// `Description` / `Software` / `Source` are kept for display.
+  static PixivImageMetadata parseWithChunks(
+    Map<String, String> chunks, {
+    String? stealthJson,
+  }) {
+    final data = <String, dynamic>{};
+    String? rawJson = stealthJson;
+
+    // The Comment chunk may itself be a JSON object (NAI default), and it
+    // usually carries the same payload as the stealth LSB stream.
+    final comment = chunks['Comment'];
+    if (comment != null && comment.isNotEmpty) {
+      final decoded = _tryDecodeObject(comment);
+      if (decoded != null) {
+        data.addAll(decoded);
+        rawJson = comment;
+      }
     }
-    if (raw is! Map) {
-      return PixivImageMetadata(textChunks: const {}, stealthJson: json);
+    // The stealth payload is also a JSON object (alpha-LSB source).
+    if (stealthJson != null && stealthJson.isNotEmpty) {
+      final decoded = _tryDecodeObject(stealthJson);
+      if (decoded != null) {
+        for (final entry in decoded.entries) {
+          data.putIfAbsent(entry.key, () => entry.value);
+        }
+        rawJson ??= stealthJson;
+      }
     }
-    final data = Map<String, dynamic>.from(raw);
+    // Merge flat fields from other chunks (Title/Description/Software/...).
+    for (final entry in chunks.entries) {
+      if (entry.key == 'Comment') continue;
+      data.putIfAbsent(entry.key, () => entry.value);
+    }
 
     return PixivImageMetadata(
-      textChunks: const {},
-      stealthJson: json,
+      textChunks: chunks,
+      stealthJson: rawJson,
       prompt: _prompt(data),
       negativePrompt: _negativePrompt(data),
       sampler: _string(data, 'sampler'),
@@ -77,6 +109,16 @@ class PixivMetadataParser {
       noiseSchedule: _string(data, 'noise_schedule'),
       signedHash: _string(data, 'signed_hash'),
     );
+  }
+
+  static Map<String, dynamic>? _tryDecodeObject(String value) {
+    try {
+      final raw = jsonDecode(value);
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (_) {
+      // Not JSON — treat as a plain text chunk.
+    }
+    return null;
   }
 
   /// Top-level `prompt`, or the v4 base caption plus each character caption.
@@ -234,23 +276,11 @@ PixivImageMetadata _extractIsolate(Uint8List pngBytes) {
     }
   }
 
-  if (stealthJson == null) {
-    return PixivImageMetadata(textChunks: textChunks, stealthJson: null);
-  }
-  final parsed = PixivMetadataParser.parse(stealthJson);
-  return PixivImageMetadata(
-    textChunks: textChunks,
-    stealthJson: parsed.stealthJson,
-    prompt: parsed.prompt,
-    negativePrompt: parsed.negativePrompt,
-    sampler: parsed.sampler,
-    steps: parsed.steps,
-    seed: parsed.seed,
-    width: parsed.width,
-    height: parsed.height,
-    scale: parsed.scale,
-    noiseSchedule: parsed.noiseSchedule,
-    signedHash: parsed.signedHash,
+  // Prefer the tEXt `Comment` chunk (NAI's default storage), fall back to the
+  // alpha-LSB stealth payload. Both may be present and carry the same fields.
+  return PixivMetadataParser.parseWithChunks(
+    textChunks,
+    stealthJson: stealthJson,
   );
 }
 

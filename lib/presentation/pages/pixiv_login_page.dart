@@ -97,13 +97,17 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
       }
     }
 
-    // A Pixiv login session is present once we land on www.pixiv.net with any
-    // cookies. Requiring the HttpOnly "sessionid" specifically was too brittle
-    // on Android — the cookie manager may miss it while the user is clearly
-    // logged in (they reached the upload page). Retry a bounded number of
-    // times for cookies that arrive a beat after onPageFinished, then give the
-    // user control via the app-bar "完成" button / back.
-    final hasSession = cookies.isNotEmpty;
+    // Pixiv's login session cookie is not always "sessionid": recent accounts
+    // use PHPSESSID / device_token / login_ever. Treat any of these as logged
+    // in, so a successful login is captured instead of retrying forever.
+    final hasSession = cookies.any((c) {
+      final name = c.name.toLowerCase();
+      return (name == 'sessionid' ||
+              name == 'phpsessid' ||
+              name == 'device_token' ||
+              name == 'login_ever') &&
+          c.value.isNotEmpty;
+    });
     if (!hasSession) {
       if (_retryCount < 5) {
         _retryCount++;
@@ -161,23 +165,43 @@ class _PixivLoginPageState extends State<PixivLoginPage> {
     }
   }
 
-  /// Pulls the CSRF token from the logged-in page. Pixiv keeps it in a
-  /// `<meta name="csrf-token">` element or in `localStorage.pixiv.akana.cookie`
-  /// (a JSON blob with an `xsrf_token` field). Cookie scanning is the last
-  /// resort because the token is normally not exposed as a cookie.
+  /// Pulls the CSRF token from the logged-in page. Pixiv exposes it as a SPA
+  /// global (`window.pixiv.context.token`), in localStorage
+  /// (`pixiv.akana.cookie` / `x-csrf-token`), or in a `<meta>` element. Cookie
+  /// scanning is the last resort because the token is normally not a cookie.
   Future<String> _extractCsrfToken() async {
     try {
       final js =
           r'''
         (() => {
-          const meta = document.querySelector('meta[name="csrf-token"]');
-          if (meta && meta.content) return meta.content;
-          try {
-            const blob = JSON.parse(
-              localStorage.getItem('pixiv.akana.cookie') || '{}'
-            );
-            if (blob && blob.xsrf_token) return blob.xsrf_token;
-          } catch (e) {}
+          // Pixiv SPA global context (most reliable).
+          if (window.pixiv && window.pixiv.context && window.pixiv.context.token) {
+            return window.pixiv.context.token;
+          }
+          if (window.token && typeof window.token === 'string' && window.token.length > 8) {
+            return window.token;
+          }
+          // meta[name="csrf-token"] / meta[name="x-csrf-token"] / any csrf meta.
+          const metas = document.querySelectorAll('meta');
+          for (let i = 0; i < metas.length; i++) {
+            const name = (metas[i].name || '').toLowerCase();
+            if ((name.includes('csrf') || name.includes('token')) && metas[i].content) {
+              return metas[i].content;
+            }
+          }
+          // localStorage blobs: pixiv.akana.cookie / pixiv.akana.data / x-csrf-token.
+          for (const key of ['pixiv.akana.cookie', 'pixiv.akana.data', 'x-csrf-token', 'csrf-token']) {
+            try {
+              const raw = localStorage.getItem(key);
+              if (!raw) continue;
+              const parsed = JSON.parse(raw);
+              if (parsed && (parsed.xsrf_token || parsed.token)) {
+                return parsed.xsrf_token || parsed.token;
+              }
+              if (typeof parsed === 'string' && parsed.length > 8) return parsed;
+              if (typeof raw === 'string' && raw.length > 8 && !raw.startsWith('{')) return raw;
+            } catch (e) {}
+          }
           const cookie = document.cookie;
           const m = cookie.match(/(?:^|; )([^=;]*csrf[^=;]*)=([^;]+)/i);
           if (m && m[2]) return m[2];

@@ -369,9 +369,17 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
   /// fields, with the raw JSON payload collapsed behind an expander.
   Widget _metadataCard() {
     final meta = controller.metadata!;
-    final chunks = meta.textChunks.entries.toList();
+    // The Comment chunk usually holds the whole NAI JSON blob; skip it here so
+    // it is not dumped as an unreadable wall of text — it lives in the raw
+    // JSON expander below instead.
+    final chunks = meta.textChunks.entries
+        .where((e) => e.key != 'Comment')
+        .toList();
     final hasChunks = chunks.isNotEmpty;
-    final hasJson = meta.stealthJson != null && meta.stealthJson!.isNotEmpty;
+    final comment = meta.textChunks['Comment'];
+    final hasJson =
+        (meta.stealthJson != null && meta.stealthJson!.isNotEmpty) ||
+        (comment != null && comment.isNotEmpty);
     final hasReadable =
         meta.prompt != null ||
         meta.negativePrompt != null ||
@@ -474,7 +482,7 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
                   childrenPadding: const EdgeInsets.only(bottom: 8),
                   children: [
                     SelectableText(
-                      meta.stealthJson!,
+                      meta.stealthJson ?? comment ?? '',
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),

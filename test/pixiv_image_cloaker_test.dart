@@ -158,5 +158,42 @@ void main() {
       expect(meta.stealthJson, 'not-json');
       expect(meta.prompt, isNull);
     });
+
+    test('parses the tEXt Comment chunk into readable fields', () {
+      final chunks = <String, String>{
+        'Title': 'NovelAI generated image',
+        'Software': 'NovelAI',
+        'Source': 'NovelAI Diffusion V4.5',
+        'Comment':
+            '{"prompt":"masterpiece, 1girl","uc":"lowres, bad anatomy",'
+            '"sampler":"k_euler","steps":28,"seed":7,"width":832,'
+            '"height":1216,"scale":5.0,"signed_hash":"sig=="}',
+      };
+      final meta = PixivMetadataParser.parseWithChunks(chunks);
+      expect(meta.prompt, 'masterpiece, 1girl');
+      expect(meta.negativePrompt, 'lowres, bad anatomy');
+      expect(meta.sampler, 'k_euler');
+      expect(meta.steps, 28);
+      expect(meta.seed, 7);
+      expect(meta.width, 832);
+      expect(meta.height, 1216);
+      expect(meta.scale, 5.0);
+      expect(meta.signedHash, 'sig==');
+      // Text chunks are preserved for display (minus the parsed Comment).
+      expect(meta.textChunks['Source'], 'NovelAI Diffusion V4.5');
+    });
+
+    test('falls back to stealth JSON when Comment chunk is absent', () {
+      final chunks = <String, String>{'Software': 'NovelAI'};
+      const stealth =
+          '{"prompt":"stealth prompt","uc":"bad","steps":20,"seed":1}';
+      final meta = PixivMetadataParser.parseWithChunks(
+        chunks,
+        stealthJson: stealth,
+      );
+      expect(meta.prompt, 'stealth prompt');
+      expect(meta.steps, 20);
+      expect(meta.stealthJson, stealth);
+    });
   });
 }
