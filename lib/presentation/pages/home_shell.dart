@@ -93,7 +93,8 @@ class _HomeShellState extends State<HomeShell> {
             Positioned.fill(
               child: IndexedStack(index: _selectedIndex, children: pages),
             ),
-            // Keep the capsule clear of the on-screen keyboard.
+            // Keep the capsule clear of the on-screen keyboard, and float it
+            // above the bottom safe area with a comfortable margin.
             AnimatedPositioned(
               duration: const Duration(milliseconds: 240),
               curve: Curves.easeOutCubic,
@@ -101,7 +102,7 @@ class _HomeShellState extends State<HomeShell> {
               right: 16,
               bottom: keyboardInset > 0
                   ? -_floatingBarHeight
-                  : (bottomInset <= 0 ? 12.0 : bottomInset),
+                  : (bottomInset <= 0 ? 24.0 : bottomInset + 16),
               child: _DragTabBar(
                 selectedIndex: _selectedIndex,
                 onSelected: (index) => setState(() => _selectedIndex = index),
@@ -153,7 +154,7 @@ class _DragTabBarState extends State<_DragTabBar> {
     final colors = Theme.of(context).colorScheme;
     final destinations = widget.destinations;
     return LiquidGlass(
-      radius: 28,
+      radius: 18,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onHorizontalDragStart: (_) =>
