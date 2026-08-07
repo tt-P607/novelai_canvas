@@ -259,16 +259,14 @@ class _CreationPageState extends State<CreationPage> {
       heightController: _customHeightController,
       availableModels: controller.availableModels,
     ),
-    if (controller.mode == GenerationMode.textToImage) ...[
-      const SizedBox(height: 18),
-      AdvancedReferenceCard(
-        controller: controller,
-        onAddVibe: _pickVibeImage,
-        onAddCharacterReference: _pickCharacterReference,
-        onEncodeVibe: _encodeVibeAt,
-        onExportVibe: _exportVibeAt,
-      ),
-    ],
+    const SizedBox(height: 18),
+    AdvancedReferenceCard(
+      controller: controller,
+      onAddVibe: _pickVibeImage,
+      onAddCharacterReference: _pickCharacterReference,
+      onEncodeVibe: _encodeVibeAt,
+      onExportVibe: _exportVibeAt,
+    ),
   ];
 
   /// Triggers a forced subscription/anlas refresh and surfaces the outcome via

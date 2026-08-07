@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../domain/entities/advanced_generation.dart';
+import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
 import 'anlas_icon.dart';
 import 'character_position_grid.dart';
@@ -31,61 +32,69 @@ class AdvancedReferenceCard extends StatelessWidget {
   final void Function(int index) onExportVibe;
 
   @override
-  Widget build(BuildContext context) => LiquidGlass(
-    padding: const EdgeInsets.all(16),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('高级参考', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 4),
-        const Text('Vibe 控制风格；角色参考仅支持原生 V4.5；多角色最多 6 个。'),
-        const Divider(height: 28),
-        _sectionHeader(
-          title: 'Vibe Transfer',
-          icon: Icons.add_photo_alternate_outlined,
-          onPressed: onAddVibe,
-        ),
-        ...controller.vibeReferences.indexed.map(
-          (entry) => _VibeTile(
-            index: entry.$1,
-            reference: entry.$2,
-            controller: controller,
-            onEncode: () => onEncodeVibe(entry.$1),
-            onExport: () => onExportVibe(entry.$1),
+  Widget build(BuildContext context) {
+    // Character reference is not supported by the local-repainting (inpaint)
+    // endpoint, so its tile is hidden there while Vibe and multi-character
+    // remain usable in every mode.
+    final showCharacterReference = controller.mode != GenerationMode.inpaint;
+    return LiquidGlass(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('高级参考', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          const Text('Vibe 控制风格；角色参考仅支持原生 V4.5；多角色最多 6 个。'),
+          const Divider(height: 28),
+          _sectionHeader(
+            title: 'Vibe Transfer',
+            icon: Icons.add_photo_alternate_outlined,
+            onPressed: onAddVibe,
           ),
-        ),
-        const Divider(height: 28),
-        _sectionHeader(
-          title: 'V4.5 角色参考',
-          icon: Icons.person_add_alt_rounded,
-          onPressed: onAddCharacterReference,
-        ),
-        ...controller.characterReferences.indexed.map(
-          (entry) => _CharacterReferenceTile(
-            index: entry.$1,
-            reference: entry.$2,
-            controller: controller,
+          ...controller.vibeReferences.indexed.map(
+            (entry) => _VibeTile(
+              index: entry.$1,
+              reference: entry.$2,
+              controller: controller,
+              onEncode: () => onEncodeVibe(entry.$1),
+              onExport: () => onExportVibe(entry.$1),
+            ),
           ),
-        ),
-        const Divider(height: 28),
-        _sectionHeader(
-          title: '多角色与坐标',
-          icon: Icons.group_add_outlined,
-          label: '添加角色',
-          onPressed: controller.characterPrompts.length >= 6
-              ? null
-              : controller.addCharacter,
-        ),
-        ...controller.characterPrompts.indexed.map(
-          (entry) => _CharacterTile(
-            index: entry.$1,
-            character: entry.$2,
-            controller: controller,
+          if (showCharacterReference) ...[
+            const Divider(height: 28),
+            _sectionHeader(
+              title: 'V4.5 角色参考',
+              icon: Icons.person_add_alt_rounded,
+              onPressed: onAddCharacterReference,
+            ),
+            ...controller.characterReferences.indexed.map(
+              (entry) => _CharacterReferenceTile(
+                index: entry.$1,
+                reference: entry.$2,
+                controller: controller,
+              ),
+            ),
+          ],
+          const Divider(height: 28),
+          _sectionHeader(
+            title: '多角色与坐标',
+            icon: Icons.group_add_outlined,
+            label: '添加角色',
+            onPressed: controller.characterPrompts.length >= 6
+                ? null
+                : controller.addCharacter,
           ),
-        ),
-      ],
-    ),
-  );
+          ...controller.characterPrompts.indexed.map(
+            (entry) => _CharacterTile(
+              index: entry.$1,
+              character: entry.$2,
+              controller: controller,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _sectionHeader({
     required String title,
