@@ -6,6 +6,7 @@ import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/network/backend_mode.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../domain/entities/director_emotion.dart';
 import '../../domain/repositories/image_tools_repository.dart';
 import '../controllers/generation_controller.dart';
@@ -73,7 +74,12 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                AppSpacing.navBarBottom,
+              ),
               sliver: SliverList.list(
                 children: [
                   _sourceCard(),

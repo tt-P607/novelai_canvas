@@ -86,7 +86,7 @@ class _HomeShellState extends State<HomeShell> {
         backgroundColor: Colors.transparent,
         extendBody: true,
         body: IndexedStack(index: _selectedIndex, children: pages),
-        bottomNavigationBar: _LiquidTabBar(
+        bottomNavigationBar: _DragTabBar(
           selectedIndex: _selectedIndex,
           onSelected: (index) => setState(() => _selectedIndex = index),
           destinations: _destinations,
@@ -104,10 +104,11 @@ class _Dest {
   final String label;
 }
 
-/// Apple-style liquid tab bar: a floating pill with translucent glass, and a
-/// selection pill that glides between items with a springy curve.
-class _LiquidTabBar extends StatefulWidget {
-  const _LiquidTabBar({
+/// Full-width bottom navigation bar in the original Material style, but with a
+/// selection pill that can be dragged horizontally to switch tabs. Dragging
+/// moves the pill with the finger; releasing snaps it to the nearest tab.
+class _DragTabBar extends StatefulWidget {
+  const _DragTabBar({
     required this.selectedIndex,
     required this.onSelected,
     required this.destinations,
@@ -118,10 +119,10 @@ class _LiquidTabBar extends StatefulWidget {
   final List<_Dest> destinations;
 
   @override
-  State<_LiquidTabBar> createState() => _LiquidTabBarState();
+  State<_DragTabBar> createState() => _DragTabBarState();
 }
 
-class _LiquidTabBarState extends State<_LiquidTabBar> {
+class _DragTabBarState extends State<_DragTabBar> {
   /// Horizontal drag offset in logical px applied to the selection pill while
   /// the user is dragging; null means no drag in progress.
   double? _dragOffset;
@@ -130,105 +131,96 @@ class _LiquidTabBarState extends State<_LiquidTabBar> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final destinations = widget.destinations;
-    return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onHorizontalDragStart: (_) =>
-            setState(() => _dragOffset = widget.selectedIndex * 1.0),
-        onHorizontalDragUpdate: (details) {
-          setState(() {
-            _dragOffset =
-                (_dragOffset ?? widget.selectedIndex.toDouble()) +
-                details.delta.dx;
-          });
-        },
-        onHorizontalDragEnd: (details) {
-          final itemWidth = _itemWidth;
-          if (itemWidth == null || itemWidth <= 0) {
-            setState(() => _dragOffset = null);
-            return;
-          }
-          // Snap to the nearest tab centre, with velocity boosting the glide.
-          final base =
-              (_dragOffset ?? widget.selectedIndex.toDouble()) / itemWidth;
-          final velocityBoost = details.primaryVelocity != null
-              ? (details.primaryVelocity! / 800)
-              : 0.0;
-          final target = (base + velocityBoost).round().clamp(
-            0,
-            destinations.length - 1,
-          );
-          setState(() => _dragOffset = null);
-          if (target != widget.selectedIndex) widget.onSelected(target);
-        },
-        onHorizontalDragCancel: () => setState(() => _dragOffset = null),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(32),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: GlassSpec.thinBlurSigma,
-              sigmaY: GlassSpec.thinBlurSigma,
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: GlassSpec.blurSigma,
+          sigmaY: GlassSpec.blurSigma,
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.07),
+            border: Border(
+              top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
             ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: GlassSpec.body(colors),
-                border: Border.all(
-                  color: GlassSpec.rimTop(colors, opacity: 0.5),
-                ),
-              ),
-              child: DecoratedBox(
-                decoration: BoxDecoration(gradient: GlassSpec.sheen()),
-                child: SizedBox(
-                  height: 72,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      _itemWidth = constraints.maxWidth / destinations.length;
-                      final itemWidth = _itemWidth!;
-                      // While dragging the pill tracks the finger exactly; on
-                      // release it springs back to the snapped position.
-                      final dragging = _dragOffset != null;
-                      final left = dragging
-                          ? _dragOffset!
-                          : widget.selectedIndex * itemWidth;
-                      return Stack(
+          ),
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: (_) =>
+                setState(() => _dragOffset = widget.selectedIndex * 1.0),
+            onHorizontalDragUpdate: (details) {
+              setState(() {
+                _dragOffset =
+                    (_dragOffset ?? widget.selectedIndex.toDouble()) +
+                    details.delta.dx;
+              });
+            },
+            onHorizontalDragEnd: (details) {
+              final itemWidth = _itemWidth;
+              if (itemWidth == null || itemWidth <= 0) {
+                setState(() => _dragOffset = null);
+                return;
+              }
+              // Snap to the nearest tab centre, with velocity boosting the
+              // glide just like a natural swipe.
+              final base =
+                  (_dragOffset ?? widget.selectedIndex.toDouble()) / itemWidth;
+              final velocityBoost = details.primaryVelocity != null
+                  ? (details.primaryVelocity! / 800)
+                  : 0.0;
+              final target = (base + velocityBoost).round().clamp(
+                0,
+                destinations.length - 1,
+              );
+              setState(() => _dragOffset = null);
+              if (target != widget.selectedIndex) widget.onSelected(target);
+            },
+            onHorizontalDragCancel: () => setState(() => _dragOffset = null),
+            child: SizedBox(
+              height: 68,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  _itemWidth = constraints.maxWidth / destinations.length;
+                  final itemWidth = _itemWidth!;
+                  final dragging = _dragOffset != null;
+                  final left = dragging
+                      ? _dragOffset!
+                      : widget.selectedIndex * itemWidth;
+                  return Stack(
+                    children: [
+                      // Sliding selection pill.
+                      AnimatedPositioned(
+                        duration: dragging
+                            ? Duration.zero
+                            : const Duration(milliseconds: 320),
+                        curve: Curves.easeOutCubic,
+                        left: left + 8,
+                        top: 6,
+                        bottom: 6,
+                        width: itemWidth - 16,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: 0.20),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                      // Items sit above the pill.
+                      Row(
                         children: [
-                          AnimatedPositioned(
-                            duration: dragging
-                                ? Duration.zero
-                                : const Duration(milliseconds: 420),
-                            curve: Curves.easeOutBack,
-                            left: left + 6,
-                            top: 6,
-                            bottom: 6,
-                            width: itemWidth - 12,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: colors.primary.withValues(alpha: 0.22),
-                                borderRadius: BorderRadius.circular(24),
-                                border: Border.all(
-                                  color: colors.primary.withValues(alpha: 0.35),
-                                ),
+                          for (var i = 0; i < destinations.length; i++)
+                            Expanded(
+                              child: _TabItem(
+                                dest: destinations[i],
+                                selected: i == widget.selectedIndex,
+                                onTap: () => widget.onSelected(i),
                               ),
                             ),
-                          ),
-                          Row(
-                            children: [
-                              for (var i = 0; i < destinations.length; i++)
-                                Expanded(
-                                  child: _TabItem(
-                                    dest: destinations[i],
-                                    selected: i == widget.selectedIndex,
-                                    onTap: () => widget.onSelected(i),
-                                  ),
-                                ),
-                            ],
-                          ),
                         ],
-                      );
-                    },
-                  ),
-                ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -256,7 +248,7 @@ class _TabItem extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(20),
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 180),
         opacity: selected ? 1 : 0.62,

@@ -10,13 +10,9 @@ import 'package:flutter/material.dart';
 /// that fades darker toward the bottom for thickness, and a faint ground
 /// reflection underneath. Nothing is a plain hairline outline.
 abstract final class GlassSpec {
-  // Apple's Liquid Glass is noticeably more transparent than frosted glass:
-  // the blur is light so the backdrop stays readable and colourful behind it.
-  static const blurSigma = 14.0;
-  static const thinBlurSigma = 10.0;
-
-  /// Generous corner so panels feel soft and unaggressive.
-  static const radius = 30.0;
+  static const blurSigma = 24.0;
+  static const thinBlurSigma = 18.0;
+  static const radius = 22.0;
 
   /// Translucent glass body; brightest at the top, denser toward the bottom so
   /// the slab reads as having depth instead of being a flat tint. Opacity is
@@ -63,18 +59,17 @@ abstract final class GlassSpec {
   /// The molten rim colour. The top edge is kept brighter via [rimTop], while
   /// this single tone is still exposed for callers that need a flat edge tint
   /// (e.g. message bubbles).
-  static Color edge(ColorScheme colors, {double opacity = 0.18}) =>
+  static Color edge(ColorScheme colors, {double opacity = 0.22}) =>
       Colors.white.withValues(alpha: opacity);
 
   /// Bright top rim — the strongest highlight on the glass wall, where the
-  /// light catches the curved upper edge. Kept thin and subtle so the glass
-  /// reads as liquid rather than a thick outlined slab.
-  static Color rimTop(ColorScheme colors, {double opacity = 0.26}) =>
+  /// light catches the curved upper edge.
+  static Color rimTop(ColorScheme colors, {double opacity = 0.42}) =>
       Colors.white.withValues(alpha: opacity);
 
   /// Dimmer bottom rim that makes the lower wall fall into shadow, giving the
   /// slab a rounded, three-dimensional lip instead of a flat outline.
-  static Color rimBottom(ColorScheme colors, {double opacity = 0.10}) =>
+  static Color rimBottom(ColorScheme colors, {double opacity = 0.14}) =>
       Colors.white.withValues(alpha: opacity);
 
   /// Translucent fill layered over the blurred backdrop (legacy tint helper).
@@ -199,15 +194,14 @@ class _LiquidSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Border draws inside the clip; the rim stroke spans the whole edge.
-    // Thin and low-opacity so the glass stays liquid, not a thick outline.
-    const rimWidth = 1.0;
+    const rimWidth = 0.8;
     return DecoratedBox(
       // Outer wall: a soft shadow inside the clip gives the rim a liquid,
       // rounded lip instead of a flat outline.
       decoration: BoxDecoration(
         borderRadius: borderRadius,
         border: Border.all(
-          color: GlassSpec.rimTop(colors, opacity: 0.24),
+          color: GlassSpec.rimTop(colors, opacity: 0.22),
           width: rimWidth,
         ),
       ),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_spacing.dart';
+
 class PlaceholderFeaturePage extends StatelessWidget {
   const PlaceholderFeaturePage({
     super.key,
@@ -19,7 +21,7 @@ class PlaceholderFeaturePage extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, AppSpacing.navBarBottom),
         children: [
           Text(
             title,

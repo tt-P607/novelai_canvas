@@ -11,6 +11,8 @@ abstract final class AppSpacing {
   /// Horizontal gutter for scrollable page content.
   static const pageHorizontal = lg;
 
-  /// Bottom padding reserved for the floating navigation bar.
-  static const navBarBottom = 120.0;
+  /// Bottom padding reserved for the floating navigation bar. Sized generously
+  /// so the floating pill (72px + safe-area inset + margins) never overlaps the
+  /// last card on devices with gesture navigation.
+  static const navBarBottom = 180.0;
 }

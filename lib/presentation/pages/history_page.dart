@@ -5,6 +5,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 
 import '../../core/errors/error_message.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../domain/entities/generation_task.dart';
 import '../controllers/generation_controller.dart';
 import '../controllers/history_controller.dart';
@@ -121,7 +122,12 @@ class _HistoryPageState extends State<HistoryPage> {
                     ),
                   ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 120),
+                  padding: const EdgeInsets.fromLTRB(
+                    12,
+                    8,
+                    12,
+                    AppSpacing.navBarBottom,
+                  ),
                   sliver: SliverMasonryGrid.count(
                     crossAxisCount: MediaQuery.sizeOf(context).width >= 700
                         ? 3

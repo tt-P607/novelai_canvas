@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/di/injection.dart';
 import '../../core/errors/error_message.dart';
 import '../../core/network/backend_mode.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../core/storage/vibe_file_parser.dart';
 import '../../data/api/native/dto/native_encode_vibe_request_dto.dart';
 import '../../data/api/native/services/native_encode_vibe_service.dart';
@@ -147,7 +148,12 @@ class _CreationPageState extends State<CreationPage> {
                   ],
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+                  padding: const EdgeInsets.fromLTRB(
+                    16,
+                    0,
+                    16,
+                    AppSpacing.navBarBottom,
+                  ),
                   sliver: SliverList.list(children: _sections()),
                 ),
               ],
