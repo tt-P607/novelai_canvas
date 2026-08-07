@@ -13,6 +13,7 @@ import '../controllers/image_tools_controller.dart';
 import '../widgets/anlas_icon.dart';
 import '../widgets/compact_snack_bar.dart';
 import '../widgets/fullscreen_image_preview.dart';
+import '../widgets/glass/liquid_glass.dart';
 
 class ImageToolsPage extends StatefulWidget {
   const ImageToolsPage({
@@ -86,11 +87,18 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
                   _directorCard(),
                   if (controller.errorMessage != null) ...[
                     const SizedBox(height: 12),
-                    Card(
-                      color: Theme.of(context).colorScheme.errorContainer,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(controller.errorMessage!),
+                    LiquidGlass(
+                      padding: const EdgeInsets.all(16),
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: Text(
+                          controller.errorMessage!,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onErrorContainer,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -167,89 +175,87 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
     );
   }
 
-  Widget _comparisonCard() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  '处理对比',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+  Widget _comparisonCard() => LiquidGlass(
+    padding: const EdgeInsets.all(12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '处理对比',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            if (controller.anlasCost != null)
+              Chip(
+                visualDensity: VisualDensity.compact,
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnlasIcon(size: 12),
+                    const SizedBox(width: 4),
+                    Text('${controller.anlasCost}'),
+                  ],
                 ),
               ),
-              if (controller.anlasCost != null)
-                Chip(
-                  visualDensity: VisualDensity.compact,
-                  label: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnlasIcon(size: 12),
-                      const SizedBox(width: 4),
-                      Text('${controller.anlasCost}'),
-                    ],
-                  ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _comparisonImage(
+                label: '原图',
+                child: Image.file(
+                  File(controller.sourceImagePath!),
+                  height: 220,
+                  fit: BoxFit.contain,
                 ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _comparisonImage(
-                  label: '原图',
-                  child: Image.file(
-                    File(controller.sourceImagePath!),
-                    height: 220,
-                    fit: BoxFit.contain,
-                  ),
-                  onTap: () => FullscreenImagePreview.showFile(
-                    context,
-                    controller.sourceImagePath!,
-                  ),
+                onTap: () => FullscreenImagePreview.showFile(
+                  context,
+                  controller.sourceImagePath!,
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _comparisonImage(
-                  label: '结果',
-                  child: Image.memory(
-                    controller.resultBytes!,
-                    height: 220,
-                    fit: BoxFit.contain,
-                  ),
-                  onTap: () => FullscreenImagePreview.showMemory(
-                    context,
-                    controller.resultBytes!,
-                  ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _comparisonImage(
+                label: '结果',
+                child: Image.memory(
+                  controller.resultBytes!,
+                  height: 220,
+                  fit: BoxFit.contain,
+                ),
+                onTap: () => FullscreenImagePreview.showMemory(
+                  context,
+                  controller.resultBytes!,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: controller.useResultAsSource,
-                  icon: const Icon(Icons.redo_rounded),
-                  label: const Text('继续处理'),
-                ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: controller.useResultAsSource,
+                icon: const Icon(Icons.redo_rounded),
+                label: const Text('继续处理'),
               ),
-              const SizedBox(width: 8),
-              FilledButton.tonalIcon(
-                onPressed: () => _saveToGallery(context),
-                icon: const Icon(Icons.save_alt_rounded),
-                label: const Text('保存'),
-              ),
-            ],
-          ),
-        ],
-      ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.tonalIcon(
+              onPressed: () => _saveToGallery(context),
+              icon: const Icon(Icons.save_alt_rounded),
+              label: const Text('保存'),
+            ),
+          ],
+        ),
+      ],
     ),
   );
 
@@ -275,93 +281,89 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
     ],
   );
 
-  Widget _sourceCard() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('源图片', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          if (controller.sourceImagePath != null)
-            InkWell(
+  Widget _sourceCard() => LiquidGlass(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('源图片', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        if (controller.sourceImagePath != null)
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => FullscreenImagePreview.showFile(
+              context,
+              controller.sourceImagePath!,
+            ),
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              onTap: () => FullscreenImagePreview.showFile(
-                context,
-                controller.sourceImagePath!,
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.file(
-                  File(controller.sourceImagePath!),
-                  height: 220,
-                  width: double.infinity,
-                  fit: BoxFit.contain,
-                ),
+              child: Image.file(
+                File(controller.sourceImagePath!),
+                height: 220,
+                width: double.infinity,
+                fit: BoxFit.contain,
               ),
             ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _pickImage,
-            icon: const Icon(Icons.photo_library_outlined),
-            label: Text(controller.sourceImagePath == null ? '选择图片' : '更换图片'),
           ),
-          if (controller.sourceImagePath != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.straighten_rounded, size: 18),
-                const SizedBox(width: 8),
-                Text('已识别 ${controller.width} × ${controller.height}'),
-              ],
-            ),
-          ],
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _pickImage,
+          icon: const Icon(Icons.photo_library_outlined),
+          label: Text(controller.sourceImagePath == null ? '选择图片' : '更换图片'),
+        ),
+        if (controller.sourceImagePath != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.straighten_rounded, size: 18),
+              const SizedBox(width: 8),
+              Text('已识别 ${controller.width} × ${controller.height}'),
+            ],
+          ),
         ],
-      ),
+      ],
     ),
   );
 
   /// Local-only NAI metadata tools. Extracting reads the tEXt chunks plus the
   /// alpha-LSB gzip payload; stripping scrubs both, so users can inspect or
   /// scrub a PNG's embedded generation metadata anywhere.
-  Widget _stripMetadataCard() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('NAI 元数据', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          const Text(
-            '读取或移除 PNG 的 tEXt 块与 alpha 通道 LSB 隐写（NAI 提示词、参数与模型签名）。'
-            '纯客户端操作，不消耗 Anlas、不走网络。',
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: controller.isRunning
-                      ? null
-                      : controller.extractMetadata,
-                  icon: const Icon(Icons.manage_search_rounded),
-                  label: const Text('提取'),
-                ),
+  Widget _stripMetadataCard() => LiquidGlass(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('NAI 元数据', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        const Text(
+          '读取或移除 PNG 的 tEXt 块与 alpha 通道 LSB 隐写（NAI 提示词、参数与模型签名）。'
+          '纯客户端操作，不消耗 Anlas、不走网络。',
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: controller.isRunning
+                    ? null
+                    : controller.extractMetadata,
+                icon: const Icon(Icons.manage_search_rounded),
+                label: const Text('提取'),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: controller.isRunning
-                      ? null
-                      : controller.stripMetadata,
-                  icon: const Icon(Icons.cleaning_services_rounded),
-                  label: const Text('剥离'),
-                ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: controller.isRunning
+                    ? null
+                    : controller.stripMetadata,
+                icon: const Icon(Icons.cleaning_services_rounded),
+                label: const Text('剥离'),
               ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+      ],
     ),
   );
 
@@ -392,13 +394,11 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
         meta.noiseSchedule != null ||
         meta.signedHash != null;
     if (!hasReadable && !hasChunks && !hasJson) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            '未检测到 NAI 元数据。',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
+      return LiquidGlass(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          '未检测到 NAI 元数据。',
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
     }
@@ -414,90 +414,88 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
       if (meta.signedHash != null) ('模型签名', meta.signedHash!),
     ];
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('提取的元数据', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            if (meta.prompt != null) ...[
-              const Text('提示词', style: TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              SelectableText(
-                meta.prompt!,
-                style: Theme.of(context).textTheme.bodySmall,
+    return LiquidGlass(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('提取的元数据', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          if (meta.prompt != null) ...[
+            const Text('提示词', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            SelectableText(
+              meta.prompt!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (meta.negativePrompt != null) ...[
+            const Text('负面词', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            SelectableText(
+              meta.negativePrompt!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (params.isNotEmpty) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final (label, value) in params)
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text('$label $value'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (hasChunks) ...[
+            const Text('文本块', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            for (final entry in chunks)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: SelectableText(
+                  '${entry.key}: ${entry.value}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
-              const SizedBox(height: 10),
-            ],
-            if (meta.negativePrompt != null) ...[
-              const Text('负面词', style: TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              SelectableText(
-                meta.negativePrompt!,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 10),
-            ],
-            if (params.isNotEmpty) ...[
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+            const SizedBox(height: 10),
+          ],
+          if (hasJson) ...[
+            Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                title: const Text(
+                  '原始 JSON',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                shape: const Border(),
+                collapsedShape: const Border(),
+                childrenPadding: const EdgeInsets.only(bottom: 8),
                 children: [
-                  for (final (label, value) in params)
-                    Chip(
-                      visualDensity: VisualDensity.compact,
-                      label: Text('$label $value'),
-                    ),
+                  SelectableText(
+                    meta.stealthJson ?? comment ?? '',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                  ),
                 ],
               ),
-              const SizedBox(height: 10),
-            ],
-            if (hasChunks) ...[
-              const Text('文本块', style: TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              for (final entry in chunks)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: SelectableText(
-                    '${entry.key}: ${entry.value}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-              const SizedBox(height: 10),
-            ],
-            if (hasJson) ...[
-              Theme(
-                data: Theme.of(
-                  context,
-                ).copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                  title: const Text(
-                    '原始 JSON',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  shape: const Border(),
-                  collapsedShape: const Border(),
-                  childrenPadding: const EdgeInsets.only(bottom: 8),
-                  children: [
-                    SelectableText(
-                      meta.stealthJson ?? comment ?? '',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _upscaleCard() => Card(
+  Widget _upscaleCard() => LiquidGlass(
     child: ListTile(
       leading: const Icon(Icons.zoom_out_map_rounded),
       title: const Text('4× 图片放大'),
@@ -509,90 +507,86 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
     ),
   );
 
-  Widget _directorCard() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('导演工具', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<DirectorTool>(
-            initialValue: controller.selectedTool,
-            decoration: const InputDecoration(
-              labelText: '处理类型',
-              border: OutlineInputBorder(),
-            ),
-            items: DirectorTool.values
-                .map(
-                  (tool) => DropdownMenuItem(
-                    value: tool,
-                    child: Text(_directorLabel(tool)),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) => controller.selectTool(value!),
+  Widget _directorCard() => LiquidGlass(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('导演工具', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<DirectorTool>(
+          initialValue: controller.selectedTool,
+          decoration: const InputDecoration(
+            labelText: '处理类型',
+            border: OutlineInputBorder(),
           ),
-          if (controller.selectedTool == DirectorTool.backgroundRemoval)
-            const Padding(
-              padding: EdgeInsets.only(top: 10),
-              child: Text('注意：精细抠图预计消耗 65–200 Anlas。'),
-            ),
-          if ({
-            DirectorTool.colorize,
-            DirectorTool.emotion,
-          }.contains(controller.selectedTool)) ...[
-            const SizedBox(height: 12),
-            if (controller.selectedTool == DirectorTool.emotion) ...[
-              DropdownButtonFormField<DirectorEmotion>(
-                initialValue: controller.selectedEmotion,
-                decoration: const InputDecoration(
-                  labelText: '表情',
-                  border: OutlineInputBorder(),
+          items: DirectorTool.values
+              .map(
+                (tool) => DropdownMenuItem(
+                  value: tool,
+                  child: Text(_directorLabel(tool)),
                 ),
-                items: DirectorEmotion.values
-                    .map(
-                      (emotion) => DropdownMenuItem(
-                        value: emotion,
-                        child: Text(emotion.label),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) controller.selectEmotion(value);
-                },
-              ),
-              const SizedBox(height: 10),
-            ],
-            TextField(
-              controller: _promptController,
-              onChanged: controller.updatePrompt,
-              decoration: InputDecoration(
-                labelText: controller.selectedTool == DirectorTool.emotion
-                    ? '附加提示词（可选）'
-                    : '上色提示词（可选）',
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            Text('Defry ${controller.defry}'),
-            Slider(
-              value: controller.defry.toDouble(),
-              min: 0,
-              max: 5,
-              divisions: 5,
-              onChanged: controller.updateDefry,
-            ),
-          ],
+              )
+              .toList(),
+          onChanged: (value) => controller.selectTool(value!),
+        ),
+        if (controller.selectedTool == DirectorTool.backgroundRemoval)
+          const Padding(
+            padding: EdgeInsets.only(top: 10),
+            child: Text('注意：精细抠图预计消耗 65–200 Anlas。'),
+          ),
+        if ({
+          DirectorTool.colorize,
+          DirectorTool.emotion,
+        }.contains(controller.selectedTool)) ...[
           const SizedBox(height: 12),
-          FilledButton.tonalIcon(
-            onPressed: controller.isRunning
-                ? null
-                : controller.applyDirectorTool,
-            icon: const Icon(Icons.auto_fix_high_rounded),
-            label: Text(controller.isRunning ? '处理中…' : '执行导演工具'),
+          if (controller.selectedTool == DirectorTool.emotion) ...[
+            DropdownButtonFormField<DirectorEmotion>(
+              initialValue: controller.selectedEmotion,
+              decoration: const InputDecoration(
+                labelText: '表情',
+                border: OutlineInputBorder(),
+              ),
+              items: DirectorEmotion.values
+                  .map(
+                    (emotion) => DropdownMenuItem(
+                      value: emotion,
+                      child: Text(emotion.label),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) controller.selectEmotion(value);
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+          TextField(
+            controller: _promptController,
+            onChanged: controller.updatePrompt,
+            decoration: InputDecoration(
+              labelText: controller.selectedTool == DirectorTool.emotion
+                  ? '附加提示词（可选）'
+                  : '上色提示词（可选）',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          Text('Defry ${controller.defry}'),
+          Slider(
+            value: controller.defry.toDouble(),
+            min: 0,
+            max: 5,
+            divisions: 5,
+            onChanged: controller.updateDefry,
           ),
         ],
-      ),
+        const SizedBox(height: 12),
+        FilledButton.tonalIcon(
+          onPressed: controller.isRunning ? null : controller.applyDirectorTool,
+          icon: const Icon(Icons.auto_fix_high_rounded),
+          label: Text(controller.isRunning ? '处理中…' : '执行导演工具'),
+        ),
+      ],
     ),
   );
 
@@ -622,79 +616,76 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
         }
       }
     }
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('压缩画幅', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            const Text(
-              '纯客户端操作，不消耗 Anlas、不走网络。'
-              '将源图用高质量重采样缩放到目标尺寸。',
+    return LiquidGlass(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('压缩画幅', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          const Text(
+            '纯客户端操作，不消耗 Anlas、不走网络。'
+            '将源图用高质量重采样缩放到目标尺寸。',
+          ),
+          const SizedBox(height: 12),
+          if (controller.sourceImagePath != null) ...[
+            Row(
+              children: [
+                const Icon(Icons.straighten_rounded, size: 18),
+                const SizedBox(width: 8),
+                Text('当前 $srcW × $srcH'),
+              ],
             ),
-            const SizedBox(height: 12),
-            if (controller.sourceImagePath != null) ...[
-              Row(
-                children: [
-                  const Icon(Icons.straighten_rounded, size: 18),
-                  const SizedBox(width: 8),
-                  Text('当前 $srcW × $srcH'),
-                ],
-              ),
-              const SizedBox(height: 8),
-            ],
-            // Align to 64
-            if (controller.sourceImagePath != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        needsAlign ? '对齐 64 → $alignW × $alignH' : '已对齐 64 像素',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    FilledButton.tonalIcon(
-                      onPressed: controller.isRunning || !needsAlign
-                          ? null
-                          : () =>
-                                controller.compressImage(CompressMode.align64),
-                      icon: const Icon(Icons.grid_4x4_rounded, size: 18),
-                      label: const Text('对齐 64'),
-                    ),
-                  ],
-                ),
-              ),
-            // Free tier
-            if (controller.sourceImagePath != null)
-              Row(
+            const SizedBox(height: 8),
+          ],
+          // Align to 64
+          if (controller.sourceImagePath != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      needsFreeTier
-                          ? '压到免费 → $freeW × $freeH（≤ 1M 像素）'
-                          : '已在免费范围内',
+                      needsAlign ? '对齐 64 → $alignW × $alignH' : '已对齐 64 像素',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
                   FilledButton.tonalIcon(
-                    onPressed: controller.isRunning || !needsFreeTier
+                    onPressed: controller.isRunning || !needsAlign
                         ? null
-                        : () => controller.compressImage(CompressMode.freeTier),
-                    icon: const Icon(Icons.workspace_premium_rounded, size: 18),
-                    label: const Text('压到免费'),
+                        : () => controller.compressImage(CompressMode.align64),
+                    icon: const Icon(Icons.grid_4x4_rounded, size: 18),
+                    label: const Text('对齐 64'),
                   ),
                 ],
               ),
-            if (controller.isRunning) ...[
-              const SizedBox(height: 8),
-              const LinearProgressIndicator(),
-            ],
+            ),
+          // Free tier
+          if (controller.sourceImagePath != null)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    needsFreeTier
+                        ? '压到免费 → $freeW × $freeH（≤ 1M 像素）'
+                        : '已在免费范围内',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: controller.isRunning || !needsFreeTier
+                      ? null
+                      : () => controller.compressImage(CompressMode.freeTier),
+                  icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+                  label: const Text('压到免费'),
+                ),
+              ],
+            ),
+          if (controller.isRunning) ...[
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(),
           ],
-        ),
+        ],
       ),
     );
   }

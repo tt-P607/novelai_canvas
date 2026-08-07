@@ -33,6 +33,9 @@ class HistoryController extends ChangeNotifier {
       final all = await _repository.list(query: this.query);
       tasks = switch (category) {
         HistoryCategory.all => all,
+        // Favourites is a cross-category collection: any starred task, whether
+        // a generation or a director-tool output.
+        HistoryCategory.favorites => all.where((t) => t.favorite).toList(),
         HistoryCategory.generation =>
           all.where((t) => !t.spec.model.startsWith('director-')).toList(),
         HistoryCategory.tool =>
@@ -88,4 +91,4 @@ class HistoryController extends ChangeNotifier {
   }
 }
 
-enum HistoryCategory { all, generation, tool }
+enum HistoryCategory { all, favorites, generation, tool }

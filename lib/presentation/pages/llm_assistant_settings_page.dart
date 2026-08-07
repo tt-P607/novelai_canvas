@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_spacing.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
+import '../widgets/section_card.dart';
 
 class LlmAssistantSettingsPage extends StatefulWidget {
   const LlmAssistantSettingsPage({super.key, required this.controller});
@@ -176,156 +178,147 @@ class _LlmAssistantSettingsPageState extends State<LlmAssistantSettingsPage> {
         : ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
             children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        '模型连接',
-                        style: Theme.of(context).textTheme.titleLarge,
+              SectionCard(
+                title: '模型连接',
+                icon: Icons.link_rounded,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: _provider,
+                      decoration: const InputDecoration(labelText: '供应商名称'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _baseUrl,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'OpenAI 兼容服务地址',
+                        hintText: 'https://api.openai.com',
+                        helperText: '无需填写 /v1，软件会自动补全接口路径。',
                       ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _provider,
-                        decoration: const InputDecoration(labelText: '供应商名称'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _baseUrl,
-                        keyboardType: TextInputType.url,
-                        decoration: const InputDecoration(
-                          labelText: 'OpenAI 兼容服务地址',
-                          hintText: 'https://api.openai.com',
-                          helperText: '无需填写 /v1，软件会自动补全接口路径。',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _apiKey,
-                        obscureText: _obscure,
-                        decoration: InputDecoration(
-                          labelText: 'LLM API Key',
-                          suffixIcon: IconButton(
-                            onPressed: () =>
-                                setState(() => _obscure = !_obscure),
-                            icon: Icon(
-                              _obscure
-                                  ? Icons.visibility_rounded
-                                  : Icons.visibility_off_rounded,
-                            ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _apiKey,
+                      obscureText: _obscure,
+                      decoration: InputDecoration(
+                        labelText: 'LLM API Key',
+                        suffixIcon: IconButton(
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                          icon: Icon(
+                            _obscure
+                                ? Icons.visibility_rounded
+                                : Icons.visibility_off_rounded,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _model,
-                        decoration: InputDecoration(
-                          labelText: '模型',
-                          hintText: '例如 gpt-4.1-mini',
-                          helperText: '可手动填写，也可从接口获取并搜索；附加图片时模型需支持 image_url。',
-                          suffixIcon: IconButton(
-                            tooltip: '获取模型列表',
-                            onPressed: _loadingModels ? null : _fetchModels,
-                            icon: _loadingModels
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.manage_search_rounded),
-                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _model,
+                      decoration: InputDecoration(
+                        labelText: '模型',
+                        hintText: '例如 gpt-4.1-mini',
+                        helperText: '可手动填写，也可从接口获取并搜索；附加图片时模型需支持 image_url。',
+                        suffixIcon: IconButton(
+                          tooltip: '获取模型列表',
+                          onPressed: _loadingModels ? null : _fetchModels,
+                          icon: _loadingModels
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.manage_search_rounded),
                         ),
                       ),
-                      if (_models.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: _showModelPicker,
-                            icon: const Icon(Icons.search_rounded),
-                            label: Text('搜索已获取的 ${_models.length} 个模型'),
-                          ),
+                    ),
+                    if (_models.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _showModelPicker,
+                          icon: const Icon(Icons.search_rounded),
+                          label: Text('搜索已获取的 ${_models.length} 个模型'),
                         ),
-                      ],
+                      ),
                     ],
-                  ),
+                  ],
                 ),
               ),
               const SizedBox(height: 14),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        '主 Agent 工具与行为',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text('提示词填入工具始终可用；Danbooru 标签查询是独立工具，可单独关闭。'),
-                      const SizedBox(height: 8),
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('启用 Danbooru 标签查询工具'),
-                        subtitle: const Text('关闭后不会向模型注册标签搜索和相关标签查询工具。'),
-                        value: _danbooruToolsEnabled,
-                        onChanged: (value) =>
-                            setState(() => _danbooruToolsEnabled = value),
-                      ),
-                      AnimatedCrossFade(
-                        duration: const Duration(milliseconds: 180),
-                        crossFadeState: _danbooruToolsEnabled
-                            ? CrossFadeState.showFirst
-                            : CrossFadeState.showSecond,
-                        firstChild: Column(
-                          children: [
-                            TextField(
-                              controller: _danbooruUrl,
-                              keyboardType: TextInputType.url,
-                              decoration: const InputDecoration(
-                                labelText: '自定义 Danbooru 工具地址（可选）',
-                                helperText: '留空时自动在内置双端点间故障切换',
-                              ),
+              SectionCard(
+                title: '主 Agent 工具与行为',
+                subtitle: '提示词填入工具始终可用；Danbooru 标签查询是独立工具，可单独关闭。',
+                icon: Icons.auto_fix_high_rounded,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('启用 Danbooru 标签查询工具'),
+                      subtitle: const Text('关闭后不会向模型注册标签搜索和相关标签查询工具。'),
+                      value: _danbooruToolsEnabled,
+                      onChanged: (value) =>
+                          setState(() => _danbooruToolsEnabled = value),
+                    ),
+                    AnimatedCrossFade(
+                      duration: const Duration(milliseconds: 180),
+                      crossFadeState: _danbooruToolsEnabled
+                          ? CrossFadeState.showFirst
+                          : CrossFadeState.showSecond,
+                      firstChild: Column(
+                        children: [
+                          TextField(
+                            controller: _danbooruUrl,
+                            keyboardType: TextInputType.url,
+                            decoration: const InputDecoration(
+                              labelText: '自定义 Danbooru 工具地址（可选）',
+                              helperText: '留空时自动在内置双端点间故障切换',
                             ),
-                            SwitchListTile.adaptive(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text('工具允许返回 NSFW 标签'),
-                              value: _showNsfw,
-                              onChanged: (value) =>
-                                  setState(() => _showNsfw = value),
-                            ),
-                          ],
-                        ),
-                        secondChild: const SizedBox.shrink(),
+                          ),
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('工具允许返回 NSFW 标签'),
+                            value: _showNsfw,
+                            onChanged: (value) =>
+                                setState(() => _showNsfw = value),
+                          ),
+                        ],
                       ),
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Agent 提交的提示词自动填入'),
-                        subtitle: const Text('关闭时由用户在对话中点击“一键填入”。'),
-                        value: _autoApplyPrompt,
-                        onChanged: (value) =>
-                            setState(() => _autoApplyPrompt = value),
-                      ),
-                    ],
-                  ),
+                      secondChild: const SizedBox.shrink(),
+                    ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Agent 提交的提示词自动填入'),
+                      subtitle: const Text('关闭时由用户在对话中点击“一键填入”。'),
+                      value: _autoApplyPrompt,
+                      onChanged: (value) =>
+                          setState(() => _autoApplyPrompt = value),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 14),
-              Card.outlined(
-                child: ListTile(
-                  leading: const Icon(Icons.psychology_alt_rounded),
-                  title: const Text('主 Agent 系统 Prompt'),
-                  subtitle: Text(
-                    widget.controller.settings.prompts.agentPrompt,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+              SectionCard(
+                title: '主 Agent 系统 Prompt',
+                icon: Icons.psychology_alt_rounded,
+                trailing: const Icon(Icons.edit_outlined),
+                onTap: _editAgentPrompt,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: 6,
+                ),
+                child: Text(
+                  widget.controller.settings.prompts.agentPrompt,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                  trailing: const Icon(Icons.edit_outlined),
-                  onTap: _editAgentPrompt,
                 ),
               ),
               const SizedBox(height: 18),

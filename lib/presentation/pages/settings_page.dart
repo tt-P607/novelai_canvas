@@ -4,10 +4,13 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/network/backend_mode.dart';
+import '../../core/theme/app_spacing.dart';
 import '../../domain/repositories/secure_credential_store.dart';
 import '../controllers/app_settings_controller.dart';
 import '../controllers/data_management_controller.dart';
 import '../controllers/llm_assistant_settings_controller.dart';
+import '../widgets/glass/liquid_glass.dart';
+import '../widgets/section_card.dart';
 import 'llm_assistant_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -150,106 +153,101 @@ class _SettingsPageState extends State<SettingsPage> {
         slivers: [
           const SliverAppBar.large(title: Text('设置')),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              AppSpacing.navBarBottom,
+            ),
             sliver: SliverList.list(
               children: [
                 _SettingsHero(colors: colors),
-                const SizedBox(height: 16),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          '接口配置',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 16),
-                        SegmentedButton<BackendMode>(
-                          segments: BackendMode.values
-                              .map(
-                                (mode) => ButtonSegment(
-                                  value: mode,
-                                  label: Text(
-                                    mode == BackendMode.native
-                                        ? '原生接口'
-                                        : 'OpenAI 接口',
-                                  ),
+                const SizedBox(height: AppSpacing.lg),
+                SectionCard(
+                  title: '接口配置',
+                  icon: Icons.link_rounded,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SegmentedButton<BackendMode>(
+                        segments: BackendMode.values
+                            .map(
+                              (mode) => ButtonSegment(
+                                value: mode,
+                                label: Text(
+                                  mode == BackendMode.native
+                                      ? '原生接口'
+                                      : 'OpenAI 接口',
                                 ),
-                              )
-                              .toList(),
-                          selected: {_mode},
-                          onSelectionChanged: (value) =>
-                              _onModeChanged(value.first),
+                              ),
+                            )
+                            .toList(),
+                        selected: {_mode},
+                        onSelectionChanged: (value) =>
+                            _onModeChanged(value.first),
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: _endpointUrlController,
+                        keyboardType: TextInputType.url,
+                        autocorrect: false,
+                        decoration: InputDecoration(
+                          labelText: '接口 URL',
+                          hintText: _mode == BackendMode.native
+                              ? AppConstants.nativeBaseUrl
+                              : 'https://example.com',
+                          helperText: _mode == BackendMode.native
+                              ? '可填写根地址或完整生成地址；软件会移除 /ai/generate-image，再按请求自动补全 /_api 和具体路径。'
+                              : '填写 OpenAI 兼容服务地址，无需在末尾填写 /v1。',
+                          prefixIcon: const Icon(Icons.link_rounded),
                         ),
-                        const SizedBox(height: 18),
+                      ),
+                      const SizedBox(height: 14),
+                      if (_loadingSecrets)
+                        const LinearProgressIndicator()
+                      else
                         TextField(
-                          controller: _endpointUrlController,
-                          keyboardType: TextInputType.url,
+                          controller: _apiKeyController,
+                          obscureText: _obscureApiKey,
                           autocorrect: false,
+                          enableSuggestions: false,
                           decoration: InputDecoration(
-                            labelText: '接口 URL',
+                            labelText: '接口密钥',
                             hintText: _mode == BackendMode.native
-                                ? AppConstants.nativeBaseUrl
-                                : 'https://example.com',
-                            helperText: _mode == BackendMode.native
-                                ? '可填写根地址或完整生成地址；软件会移除 /ai/generate-image，再按请求自动补全 /_api 和具体路径。'
-                                : '填写 OpenAI 兼容服务地址，无需在末尾填写 /v1。',
-                            prefixIcon: const Icon(Icons.link_rounded),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        if (_loadingSecrets)
-                          const LinearProgressIndicator()
-                        else
-                          TextField(
-                            controller: _apiKeyController,
-                            obscureText: _obscureApiKey,
-                            autocorrect: false,
-                            enableSuggestions: false,
-                            decoration: InputDecoration(
-                              labelText: '接口密钥',
-                              hintText: _mode == BackendMode.native
-                                  ? 'NovelAI Token'
-                                  : 'API Key（按服务要求填写）',
-                              prefixIcon: const Icon(Icons.key_rounded),
-                              suffixIcon: IconButton(
-                                onPressed: () => setState(
-                                  () => _obscureApiKey = !_obscureApiKey,
-                                ),
-                                icon: Icon(
-                                  _obscureApiKey
-                                      ? Icons.visibility_rounded
-                                      : Icons.visibility_off_rounded,
-                                ),
+                                ? 'NovelAI Token'
+                                : 'API Key（按服务要求填写）',
+                            prefixIcon: const Icon(Icons.key_rounded),
+                            suffixIcon: IconButton(
+                              onPressed: () => setState(
+                                () => _obscureApiKey = !_obscureApiKey,
+                              ),
+                              icon: Icon(
+                                _obscureApiKey
+                                    ? Icons.visibility_rounded
+                                    : Icons.visibility_off_rounded,
                               ),
                             ),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                Card(
-                  child: ListTile(
-                    leading: Icon(
-                      Icons.auto_awesome_rounded,
-                      color: colors.primary,
-                    ),
-                    title: const Text('提示词助手'),
-                    subtitle: const Text('单模型对话、图片附件、Danbooru 工具、会话归档与自动填入'),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () => Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (context) => LlmAssistantSettingsPage(
-                          controller: widget.llmSettingsController,
-                        ),
+                const SizedBox(height: AppSpacing.lg),
+                SectionCard(
+                  title: '提示词助手',
+                  subtitle: '单模型对话、图片附件、Danbooru 工具、会话归档与自动填入',
+                  icon: Icons.auto_awesome_rounded,
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (context) => LlmAssistantSettingsPage(
+                        controller: widget.llmSettingsController,
                       ),
                     ),
                   ),
+                  child: const SizedBox.shrink(),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
                 _DataManagementCard(
                   controller: widget.dataManagementController,
                   showMessage: _showMessage,
@@ -261,19 +259,19 @@ class _SettingsPageState extends State<SettingsPage> {
                     final version = snapshot.data == null
                         ? '正在读取版本…'
                         : '${snapshot.data!.version}+${snapshot.data!.buildNumber}';
-                    return Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.info_outline_rounded),
-                        title: const Text(AppConstants.appName),
-                        subtitle: Text(
-                          '版本 $version\n包名 com.elysia.novelaicanvas',
+                    return SectionCard(
+                      title: AppConstants.appName,
+                      icon: Icons.info_outline_rounded,
+                      child: Text(
+                        '版本 $version\n包名 com.elysia.novelaicanvas',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                        isThreeLine: true,
                       ),
                     );
                   },
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: AppSpacing.xl),
                 FilledButton.icon(
                   onPressed: _saving || _loadingSecrets ? null : _save,
                   icon: _saving
@@ -302,18 +300,14 @@ class _SettingsHero extends StatelessWidget {
   final ColorScheme colors;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(
-      color: colors.primaryContainer.withValues(alpha: 0.32),
-      borderRadius: BorderRadius.circular(22),
-      border: Border.all(color: colors.primary.withValues(alpha: 0.22)),
-    ),
+  Widget build(BuildContext context) => LiquidGlass(
+    radius: 22,
+    padding: const EdgeInsets.all(AppSpacing.lg),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(Icons.shield_moon_rounded, color: colors.primary, size: 30),
-        const SizedBox(width: 14),
+        const SizedBox(width: AppSpacing.sm + 6),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -376,80 +370,74 @@ class _DataManagementCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: controller,
-    builder: (context, _) => Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('数据与备份', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            const Text(
-              '备份包含非敏感设置、Agent Prompt 和生成历史参数；不会导出任何 API Key 或 Token。',
-            ),
-            const SizedBox(height: 14),
-            OutlinedButton.icon(
-              onPressed: controller.busy
-                  ? null
-                  : () async {
-                      final path = await controller.exportBackup();
-                      if (path != null) showMessage('备份已保存到：$path');
-                      if (controller.errorMessage != null) {
-                        showMessage('导出失败：${controller.errorMessage}');
-                      }
-                    },
-              icon: const Icon(Icons.file_upload_outlined),
-              label: const Text('导出备份'),
-            ),
+    builder: (context, _) => SectionCard(
+      title: '数据与备份',
+      subtitle: '备份包含非敏感设置、Agent Prompt 和生成历史参数；不会导出任何 API Key 或 Token。',
+      icon: Icons.storage_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            onPressed: controller.busy
+                ? null
+                : () async {
+                    final path = await controller.exportBackup();
+                    if (path != null) showMessage('备份已保存到：$path');
+                    if (controller.errorMessage != null) {
+                      showMessage('导出失败：${controller.errorMessage}');
+                    }
+                  },
+            icon: const Icon(Icons.file_upload_outlined),
+            label: const Text('导出备份'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: controller.busy
+                ? null
+                : () async {
+                    final confirmed = await _confirm(
+                      context,
+                      title: '导入备份',
+                      content:
+                          '将恢复普通设置、LLM Prompt 和历史参数。同 ID 历史默认保留本机版本，安全凭据不会被修改。',
+                    );
+                    if (!confirmed) return;
+                    final count = await controller.importBackup();
+                    if (count != null) showMessage('已读取并导入 $count 条历史记录。');
+                    if (controller.errorMessage != null) {
+                      showMessage('导入失败：${controller.errorMessage}');
+                    }
+                  },
+            icon: const Icon(Icons.file_download_outlined),
+            label: const Text('导入备份'),
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: controller.busy
+                ? null
+                : () async {
+                    final confirmed = await _confirm(
+                      context,
+                      title: '清除全部安全凭据',
+                      content:
+                          '将从系统 Keychain / Keystore 删除生图接口密钥和 LLM Key。此操作不可撤销。',
+                    );
+                    if (!confirmed) return;
+                    try {
+                      await controller.clearCredentials();
+                      showMessage('全部安全凭据已清除。');
+                    } catch (_) {
+                      showMessage('清除失败：${controller.errorMessage}');
+                    }
+                  },
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('清除全部安全凭据'),
+          ),
+          if (controller.busy) ...[
             const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: controller.busy
-                  ? null
-                  : () async {
-                      final confirmed = await _confirm(
-                        context,
-                        title: '导入备份',
-                        content:
-                            '将恢复普通设置、LLM Prompt 和历史参数。同 ID 历史默认保留本机版本，安全凭据不会被修改。',
-                      );
-                      if (!confirmed) return;
-                      final count = await controller.importBackup();
-                      if (count != null) showMessage('已读取并导入 $count 条历史记录。');
-                      if (controller.errorMessage != null) {
-                        showMessage('导入失败：${controller.errorMessage}');
-                      }
-                    },
-              icon: const Icon(Icons.file_download_outlined),
-              label: const Text('导入备份'),
-            ),
-            const SizedBox(height: 10),
-            TextButton.icon(
-              onPressed: controller.busy
-                  ? null
-                  : () async {
-                      final confirmed = await _confirm(
-                        context,
-                        title: '清除全部安全凭据',
-                        content:
-                            '将从系统 Keychain / Keystore 删除生图接口密钥和 LLM Key。此操作不可撤销。',
-                      );
-                      if (!confirmed) return;
-                      try {
-                        await controller.clearCredentials();
-                        showMessage('全部安全凭据已清除。');
-                      } catch (_) {
-                        showMessage('清除失败：${controller.errorMessage}');
-                      }
-                    },
-              icon: const Icon(Icons.delete_forever_outlined),
-              label: const Text('清除全部安全凭据'),
-            ),
-            if (controller.busy) ...[
-              const SizedBox(height: 10),
-              const LinearProgressIndicator(),
-            ],
+            const LinearProgressIndicator(),
           ],
-        ),
+        ],
       ),
     ),
   );

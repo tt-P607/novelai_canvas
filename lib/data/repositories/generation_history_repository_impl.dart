@@ -88,9 +88,11 @@ class GenerationHistoryRepositoryImpl implements GenerationHistoryRepository {
       GenerationTaskColumns.table,
       where: where,
       whereArgs: whereArgs,
+      // Favorites first, then by creation time — createdAt (not updatedAt) so
+      // toggling a favourite never reorders the timeline unexpectedly.
       orderBy:
           '${GenerationTaskColumns.favorite} DESC, '
-          '${GenerationTaskColumns.updatedAt} DESC',
+          '${GenerationTaskColumns.createdAt} DESC',
       offset: offset,
       limit: limit,
     );
@@ -172,8 +174,9 @@ class GenerationHistoryRepositoryImpl implements GenerationHistoryRepository {
   Future<GenerationTask> toggleFavorite(String id) async {
     final task = await find(id);
     if (task == null) throw StateError('生成任务 $id 不存在。');
-    return update(
-      task.copyWith(favorite: !task.favorite, updatedAt: DateTime.now()),
-    );
+    // Favouriting is a property change, not an activity event: keeping
+    // updatedAt untouched prevents the task from jumping to the top of the
+    // timeline just because it was starred.
+    return update(task.copyWith(favorite: !task.favorite));
   }
 }

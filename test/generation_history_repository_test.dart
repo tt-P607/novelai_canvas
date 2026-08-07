@@ -76,6 +76,54 @@ void main() {
     expect(await repository.find(task.id), isNull);
   });
 
+  test('收藏任务排在收藏组内按创建时间排序，且不刷新 updatedAt', () async {
+    final older = _task(
+      status: GenerationTaskStatus.completed,
+      id: 'task-older',
+      imagePath: '/results/older.png',
+      favorite: true,
+      timestamp: DateTime.utc(2026, 7, 19, 8),
+    );
+    final newer = _task(
+      status: GenerationTaskStatus.completed,
+      id: 'task-newer',
+      imagePath: '/results/newer.png',
+      favorite: true,
+      timestamp: DateTime.utc(2026, 7, 20, 8),
+    );
+    final plain = _task(
+      status: GenerationTaskStatus.completed,
+      id: 'task-plain',
+      imagePath: '/results/plain.png',
+      timestamp: DateTime.utc(2026, 7, 21, 8),
+    );
+    // Preserve creation timestamps so the ordering is deterministic.
+    await repository.save(older);
+    await repository.save(newer);
+    await repository.save(plain);
+
+    final list = await repository.list(limit: 100);
+    expect(list.map((t) => t.id).toList(), [
+      // favourites first (newer created first in list), then plain
+      'task-newer',
+      'task-older',
+      'task-plain',
+    ]);
+
+    final before = await repository.find('task-plain');
+    final toggled = await repository.toggleFavorite('task-plain');
+    expect(toggled.favorite, isTrue);
+    // Favouriting must not touch updatedAt, so the timeline does not jump.
+    expect(toggled.updatedAt, before!.updatedAt);
+
+    final after = await repository.list(limit: 100);
+    expect(after.map((t) => t.id).toList(), [
+      'task-plain',
+      'task-newer',
+      'task-older',
+    ]);
+  });
+
   test('初始化会把遗留 running 任务标记为 interrupted', () async {
     final running = _task(status: GenerationTaskStatus.running);
     await repository.save(running);
@@ -90,13 +138,15 @@ void main() {
 }
 
 GenerationTask _task({
+  String id = 'task-1',
   GenerationTaskStatus status = GenerationTaskStatus.queued,
   bool favorite = false,
   String? imagePath,
+  DateTime? timestamp,
 }) {
-  final timestamp = DateTime.utc(2026, 7, 19, 8);
+  final effectiveTimestamp = timestamp ?? DateTime.utc(2026, 7, 19, 8);
   return GenerationTask(
-    id: 'task-1',
+    id: id,
     spec: const GenerationSpec(
       mode: GenerationMode.textToImage,
       backendMode: BackendMode.native,
@@ -113,8 +163,8 @@ GenerationTask _task({
       seed: 42,
     ),
     status: status,
-    createdAt: timestamp,
-    updatedAt: timestamp,
+    createdAt: effectiveTimestamp,
+    updatedAt: effectiveTimestamp,
     favorite: favorite,
     imagePath: imagePath,
   );

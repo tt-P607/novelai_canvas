@@ -11,6 +11,7 @@ import '../controllers/history_controller.dart';
 import '../widgets/anlas_icon.dart';
 import '../widgets/compact_snack_bar.dart';
 import '../widgets/fullscreen_image_preview.dart';
+import '../widgets/history_card.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({
@@ -76,6 +77,10 @@ class _HistoryPageState extends State<HistoryPage> {
                         label: Text('全部'),
                       ),
                       ButtonSegment(
+                        value: HistoryCategory.favorites,
+                        label: Text('收藏'),
+                      ),
+                      ButtonSegment(
                         value: HistoryCategory.generation,
                         label: Text('生成'),
                       ),
@@ -95,11 +100,26 @@ class _HistoryPageState extends State<HistoryPage> {
                   child: Center(child: CircularProgressIndicator()),
                 )
               else if (widget.controller.tasks.isEmpty)
-                const SliverFillRemaining(
+                SliverFillRemaining(
                   hasScrollBody: false,
-                  child: _EmptyHistory(),
+                  child: _EmptyHistory(
+                    category: widget.controller.category,
+                    hasQuery: widget.controller.query.isNotEmpty,
+                  ),
                 )
-              else
+              else ...[
+                if (widget.controller.category == HistoryCategory.all &&
+                    widget.controller.tasks.any((t) => t.favorite))
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                    sliver: SliverToBoxAdapter(
+                      child: _FavoritesHeader(
+                        count: widget.controller.tasks
+                            .where((t) => t.favorite)
+                            .length,
+                      ),
+                    ),
+                  ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 120),
                   sliver: SliverMasonryGrid.count(
@@ -109,16 +129,18 @@ class _HistoryPageState extends State<HistoryPage> {
                     mainAxisSpacing: 10,
                     crossAxisSpacing: 10,
                     childCount: widget.controller.tasks.length,
-                    itemBuilder: (context, index) => _HistoryCard(
-                      task: widget.controller.tasks[index],
-                      onTap: () =>
-                          _showDetails(context, widget.controller.tasks[index]),
-                      onFavorite: () => widget.controller.toggleFavorite(
-                        widget.controller.tasks[index].id,
-                      ),
-                    ),
+                    itemBuilder: (context, index) {
+                      final task = widget.controller.tasks[index];
+                      return HistoryCard(
+                        task: task,
+                        onTap: () => _showDetails(context, task),
+                        onFavorite: () =>
+                            widget.controller.toggleFavorite(task.id),
+                      );
+                    },
                   ),
                 ),
+              ],
             ],
           ),
         ),
@@ -248,92 +270,78 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 }
 
-class _HistoryCard extends StatelessWidget {
-  const _HistoryCard({
-    required this.task,
-    required this.onTap,
-    required this.onFavorite,
-  });
+/// Banner shown above the grid in 全部 view when favourites exist, so starred
+/// works read as a distinct group instead of silently jumping to the top.
+class _FavoritesHeader extends StatelessWidget {
+  const _FavoritesHeader({required this.count});
 
-  final GenerationTask task;
-  final VoidCallback onTap;
-  final VoidCallback onFavorite;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
-    final imagePath = task.thumbnailPath ?? task.imagePath;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
+    final colors = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(Icons.favorite_rounded, size: 16, color: colors.tertiary),
+        const SizedBox(width: 6),
+        Text(
+          '已收藏 $count 张',
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Divider(color: colors.outlineVariant.withValues(alpha: 0.4)),
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptyHistory extends StatelessWidget {
+  const _EmptyHistory({required this.category, required this.hasQuery});
+
+  final HistoryCategory category;
+  final bool hasQuery;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final (icon, title, message) = switch ((category, hasQuery)) {
+      (_, true) => (Icons.search_off_rounded, '没有找到匹配的作品', '换个关键词试试，或清除搜索条件。'),
+      (HistoryCategory.favorites, false) => (
+        Icons.favorite_border_rounded,
+        '还没有收藏',
+        '在任意作品卡片右上角点爱心，即可把心仪作品收进这里。',
+      ),
+      (HistoryCategory.tool, false) => (
+        Icons.grid_view_outlined,
+        '还没有工具结果',
+        '导演工具等处理出的图片会保存在这里。',
+      ),
+      _ => (Icons.photo_library_outlined, '还没有作品', '生成完成的图片、参数快照和失败任务都会保存在这里。'),
+    };
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            AspectRatio(
-              aspectRatio: task.spec.width / task.spec.height,
-              child: imagePath != null && File(imagePath).existsSync()
-                  ? Image.file(File(imagePath), fit: BoxFit.cover)
-                  : ColoredBox(
-                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                      child: Center(
-                        child: Icon(
-                          task.status == GenerationTaskStatus.failed
-                              ? Icons.error_outline_rounded
-                              : Icons.hourglass_empty_rounded,
-                        ),
-                      ),
-                    ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 4, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      task.spec.prompt,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: onFavorite,
-                    icon: Icon(
-                      task.favorite
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                    ),
-                  ),
-                ],
-              ),
+            Icon(icon, size: 72, color: colors.primary),
+            const SizedBox(height: 16),
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
             ),
           ],
         ),
       ),
     );
   }
-}
-
-class _EmptyHistory extends StatelessWidget {
-  const _EmptyHistory();
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.photo_library_outlined,
-            size: 72,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          const SizedBox(height: 16),
-          Text('还没有作品', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          const Text('生成完成的图片、参数快照和失败任务都会保存在这里。'),
-        ],
-      ),
-    ),
-  );
 }

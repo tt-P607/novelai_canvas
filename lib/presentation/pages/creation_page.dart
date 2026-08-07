@@ -585,7 +585,7 @@ class _CreationPageState extends State<CreationPage> {
       GenerationTaskStatus.cancelled => Colors.orange,
       _ => Theme.of(context).colorScheme.primary,
     };
-    return Card(
+    return LiquidGlass(
       child: ListTile(
         leading: Icon(Icons.bubble_chart_rounded, color: color),
         title: Text(_statusLabel(task.status)),
@@ -906,63 +906,61 @@ class _CreationPageState extends State<CreationPage> {
     onSelectionChanged: (selection) => controller.updateMode(selection.single),
   );
 
-  Widget _imageInputCard() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('图片输入', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          if (controller.sourceImagePath != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Stack(
-                children: [
-                  Image.file(
-                    File(controller.sourceImagePath!),
-                    height: 180,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                  // Painted mask preview: the mask PNG is white where the
-                  // image will be regenerated, tinted here so the selection
-                  // stays visible after leaving the editor.
-                  if (controller.mode == GenerationMode.inpaint &&
-                      controller.maskImagePath != null)
-                    Positioned.fill(
-                      child: Image.file(
-                        File(controller.maskImagePath!),
-                        fit: BoxFit.cover,
-                        color: const Color(0x804F6BD8),
-                        colorBlendMode: BlendMode.modulate,
-                        opacity: const AlwaysStoppedAnimation(0.55),
-                        gaplessPlayback: true,
-                      ),
+  Widget _imageInputCard() => LiquidGlass(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('图片输入', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        if (controller.sourceImagePath != null)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              children: [
+                Image.file(
+                  File(controller.sourceImagePath!),
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+                // Painted mask preview: the mask PNG is white where the
+                // image will be regenerated, tinted here so the selection
+                // stays visible after leaving the editor.
+                if (controller.mode == GenerationMode.inpaint &&
+                    controller.maskImagePath != null)
+                  Positioned.fill(
+                    child: Image.file(
+                      File(controller.maskImagePath!),
+                      fit: BoxFit.cover,
+                      color: const Color(0x804F6BD8),
+                      colorBlendMode: BlendMode.modulate,
+                      opacity: const AlwaysStoppedAnimation(0.55),
+                      gaplessPlayback: true,
                     ),
-                ],
-              ),
+                  ),
+              ],
             ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _pickSourceImage,
-            icon: const Icon(Icons.photo_library_outlined),
-            label: Text(controller.sourceImagePath == null ? '选择源图片' : '更换源图片'),
           ),
-          if (controller.mode == GenerationMode.inpaint) ...[
-            const Divider(height: 28),
-            FilledButton.tonalIcon(
-              onPressed: controller.sourceImagePath == null
-                  ? null
-                  : _openMaskEditor,
-              icon: const Icon(Icons.brush_rounded),
-              label: Text(
-                controller.maskImagePath == null ? '涂抹重绘区域' : '重新编辑重绘区域',
-              ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _pickSourceImage,
+          icon: const Icon(Icons.photo_library_outlined),
+          label: Text(controller.sourceImagePath == null ? '选择源图片' : '更换源图片'),
+        ),
+        if (controller.mode == GenerationMode.inpaint) ...[
+          const Divider(height: 28),
+          FilledButton.tonalIcon(
+            onPressed: controller.sourceImagePath == null
+                ? null
+                : _openMaskEditor,
+            icon: const Icon(Icons.brush_rounded),
+            label: Text(
+              controller.maskImagePath == null ? '涂抹重绘区域' : '重新编辑重绘区域',
             ),
-          ],
+          ),
         ],
-      ),
+      ],
     ),
   );
 

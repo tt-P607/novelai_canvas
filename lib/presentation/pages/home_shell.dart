@@ -45,6 +45,13 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _selectedIndex = 0;
 
+  static const _destinations = <_Dest>[
+    _Dest(Icons.auto_awesome_outlined, Icons.auto_awesome_rounded, '创作'),
+    _Dest(Icons.photo_library_outlined, Icons.photo_library_rounded, '作品'),
+    _Dest(Icons.grid_view_outlined, Icons.grid_view_rounded, '工具'),
+    _Dest(Icons.settings_outlined, Icons.settings_rounded, '设置'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -79,55 +86,148 @@ class _HomeShellState extends State<HomeShell> {
         backgroundColor: Colors.transparent,
         extendBody: true,
         body: IndexedStack(index: _selectedIndex, children: pages),
-        bottomNavigationBar: _glassNavigationBar(),
+        bottomNavigationBar: _LiquidTabBar(
+          selectedIndex: _selectedIndex,
+          onSelected: (index) => setState(() => _selectedIndex = index),
+          destinations: _destinations,
+        ),
       ),
     );
   }
+}
 
-  /// The bar floats above page content, so it blurs the scrolling body instead
-  /// of painting an opaque strip over it.
-  Widget _glassNavigationBar() => ClipRect(
-    child: BackdropFilter(
-      filter: ImageFilter.blur(
-        sigmaX: GlassSpec.blurSigma,
-        sigmaY: GlassSpec.blurSigma,
-      ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.07),
-          border: Border(
-            top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+class _Dest {
+  const _Dest(this.icon, this.selectedIcon, this.label);
+
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+}
+
+/// Apple-style liquid tab bar: a floating pill with translucent glass, and a
+/// selection pill that glides between items with a springy curve.
+class _LiquidTabBar extends StatelessWidget {
+  const _LiquidTabBar({
+    required this.selectedIndex,
+    required this.onSelected,
+    required this.destinations,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+  final List<_Dest> destinations;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    // Floating pill inset from the screen edges and above the gesture area.
+    return SafeArea(
+      minimum: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: GlassSpec.thinBlurSigma,
+            sigmaY: GlassSpec.thinBlurSigma,
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: GlassSpec.body(colors),
+              border: Border.all(color: GlassSpec.rimTop(colors, opacity: 0.5)),
+            ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(gradient: GlassSpec.sheen()),
+              child: SizedBox(
+                height: 72,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final itemWidth =
+                        constraints.maxWidth / destinations.length;
+                    return Stack(
+                      children: [
+                        // Sliding selection pill — springs between items.
+                        AnimatedPositioned(
+                          duration: const Duration(milliseconds: 420),
+                          curve: Curves.easeOutBack,
+                          left: selectedIndex * itemWidth + 6,
+                          top: 6,
+                          bottom: 6,
+                          width: itemWidth - 12,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: colors.primary.withValues(alpha: 0.22),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: colors.primary.withValues(alpha: 0.35),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Items sit above the pill.
+                        Row(
+                          children: [
+                            for (var i = 0; i < destinations.length; i++)
+                              Expanded(
+                                child: _TabItem(
+                                  dest: destinations[i],
+                                  selected: i == selectedIndex,
+                                  onTap: () => onSelected(i),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
           ),
         ),
-        child: NavigationBar(
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: (index) {
-            setState(() => _selectedIndex = index);
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.auto_awesome_outlined),
-              selectedIcon: Icon(Icons.auto_awesome_rounded),
-              label: '创作',
+      ),
+    );
+  }
+}
+
+class _TabItem extends StatelessWidget {
+  const _TabItem({
+    required this.dest,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _Dest dest;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 180),
+        opacity: selected ? 1 : 0.62,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              selected ? dest.selectedIcon : dest.icon,
+              size: 26,
+              color: selected ? colors.primary : colors.onSurfaceVariant,
             ),
-            NavigationDestination(
-              icon: Icon(Icons.photo_library_outlined),
-              selectedIcon: Icon(Icons.photo_library_rounded),
-              label: '作品',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.grid_view_outlined),
-              selectedIcon: Icon(Icons.grid_view_rounded),
-              label: '工具',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings_rounded),
-              label: '设置',
+            const SizedBox(height: 4),
+            Text(
+              dest.label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: selected ? colors.primary : colors.onSurfaceVariant,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
             ),
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 }

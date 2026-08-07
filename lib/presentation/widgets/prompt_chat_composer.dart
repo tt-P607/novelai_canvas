@@ -36,56 +36,63 @@ class PromptChatComposer extends StatelessWidget {
           sigmaX: GlassSpec.thinBlurSigma,
           sigmaY: GlassSpec.thinBlurSigma,
         ),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
+            gradient: GlassSpec.body(Theme.of(context).colorScheme),
             border: Border(
-              top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+              top: BorderSide(
+                color: GlassSpec.rimTop(Theme.of(context).colorScheme),
+              ),
             ),
           ),
-          child: Column(
-            children: [
-              if (imagePath != null) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: _attachmentPreview(context, imagePath),
-                ),
-                const SizedBox(height: 8),
-              ],
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+          child: DecoratedBox(
+            decoration: BoxDecoration(gradient: GlassSpec.sheen()),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
                 children: [
-                  IconButton(
-                    tooltip: '添加图片',
-                    onPressed: onPickImage,
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: input,
-                      minLines: 1,
-                      maxLines: 6,
-                      decoration: const InputDecoration(
-                        hintText: '询问画面、tag，或要求整理 NovelAI 提示词…',
-                        border: OutlineInputBorder(),
+                  if (imagePath != null) ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: _attachmentPreview(context, imagePath),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        tooltip: '添加图片',
+                        onPressed: onPickImage,
+                        icon: const Icon(Icons.add_photo_alternate_outlined),
                       ),
-                      onSubmitted: (_) => onSend(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    tooltip: isRunning ? '中止请求' : '发送',
-                    onPressed: isRunning ? onCancel : onSend,
-                    icon: Icon(
-                      isRunning
-                          ? Icons.stop_rounded
-                          : Icons.arrow_upward_rounded,
-                    ),
+                      Expanded(
+                        child: TextField(
+                          controller: input,
+                          minLines: 1,
+                          maxLines: 6,
+                          decoration: const InputDecoration(
+                            hintText: '询问画面、tag，或要求整理 NovelAI 提示词…',
+                            border: OutlineInputBorder(),
+                          ),
+                          onSubmitted: (_) => onSend(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filled(
+                        tooltip: isRunning ? '中止请求' : '发送',
+                        onPressed: isRunning ? onCancel : onSend,
+                        icon: Icon(
+                          isRunning
+                              ? Icons.stop_rounded
+                              : Icons.arrow_upward_rounded,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
