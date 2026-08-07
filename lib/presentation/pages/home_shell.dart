@@ -45,7 +45,7 @@ class _HomeShellState extends State<HomeShell> {
 
   /// Height of the floating tab bar so the shell can animate it off-screen
   /// while the keyboard is open.
-  static const _floatingBarHeight = 64.0;
+  static const _floatingBarHeight = 72.0;
 
   static const _destinations = <_Dest>[
     _Dest(Icons.auto_awesome_outlined, Icons.auto_awesome_rounded, '创作'),
@@ -93,8 +93,8 @@ class _HomeShellState extends State<HomeShell> {
             Positioned.fill(
               child: IndexedStack(index: _selectedIndex, children: pages),
             ),
-            // Keep the capsule clear of the on-screen keyboard, and float it
-            // above the bottom safe area with a comfortable margin.
+            // Keep the capsule clear of the on-screen keyboard and hug the
+            // bottom safe area so no content peeks through underneath it.
             AnimatedPositioned(
               duration: const Duration(milliseconds: 240),
               curve: Curves.easeOutCubic,
@@ -102,7 +102,7 @@ class _HomeShellState extends State<HomeShell> {
               right: 16,
               bottom: keyboardInset > 0
                   ? -_floatingBarHeight
-                  : (bottomInset <= 0 ? 24.0 : bottomInset + 16),
+                  : (bottomInset <= 0 ? 8.0 : bottomInset + 6),
               child: _DragTabBar(
                 selectedIndex: _selectedIndex,
                 onSelected: (index) => setState(() => _selectedIndex = index),
@@ -206,8 +206,8 @@ class _DragTabBarState extends State<_DragTabBar> {
                         : const Duration(milliseconds: 320),
                     curve: Curves.easeOutCubic,
                     left: left + 8,
-                    top: 8,
-                    bottom: 8,
+                    top: 10,
+                    bottom: 10,
                     width: itemWidth - 16,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
