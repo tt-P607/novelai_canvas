@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/advanced_generation.dart';
 import '../controllers/generation_controller.dart';
+import 'anlas_icon.dart';
 import 'character_position_grid.dart';
 import 'glass/liquid_glass.dart';
 
@@ -185,8 +186,7 @@ class _VibeTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 2),
-                    Icon(
-                      Icons.local_fire_department_rounded,
+                    AnlasIcon(
                       size: 12,
                       color: hasEncoding
                           ? colors.onPrimaryContainer

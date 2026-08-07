@@ -176,8 +176,8 @@ class PixivMetadataParser {
   }
 }
 
-/// Strips NAI metadata from a PNG before uploading to Pixiv, and reads it back
-/// for inspection.
+/// Strips NAI metadata from a PNG and reads it back for inspection. Used by the
+/// image-tools "NAI 元数据" extract/strip feature.
 ///
 /// Two areas are handled:
 /// 1. PNG tEXt/iTXt chunks — removed by re-encoding (img.encodePng drops
@@ -192,7 +192,7 @@ class PixivImageCloaker {
     final outBytes = await encodeBytes(bytes);
 
     final dir = await getTemporaryDirectory();
-    final outDir = Directory(p.join(dir.path, 'pixiv_cloak'));
+    final outDir = Directory(p.join(dir.path, 'nai_cloak'));
     if (!await outDir.exists()) await outDir.create(recursive: true);
     final outPath = p.join(
       outDir.path,

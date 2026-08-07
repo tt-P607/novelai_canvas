@@ -322,8 +322,8 @@ class _ImageToolsPageState extends State<ImageToolsPage> {
   );
 
   /// Local-only NAI metadata tools. Extracting reads the tEXt chunks plus the
-  /// alpha-LSB gzip payload; stripping scrubs both. Mirrors the Pixiv upload
-  /// "剥离 NAI 元数据" toggle so users can inspect/scrub a PNG anywhere.
+  /// alpha-LSB gzip payload; stripping scrubs both, so users can inspect or
+  /// scrub a PNG's embedded generation metadata anywhere.
   Widget _stripMetadataCard() => Card(
     child: Padding(
       padding: const EdgeInsets.all(16),
