@@ -109,18 +109,6 @@ class _HistoryPageState extends State<HistoryPage> {
                   ),
                 )
               else ...[
-                if (widget.controller.category == HistoryCategory.all &&
-                    widget.controller.tasks.any((t) => t.favorite))
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-                    sliver: SliverToBoxAdapter(
-                      child: _FavoritesHeader(
-                        count: widget.controller.tasks
-                            .where((t) => t.favorite)
-                            .length,
-                      ),
-                    ),
-                  ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(
                     12,
@@ -273,35 +261,6 @@ class _HistoryPageState extends State<HistoryPage> {
         message: '保存失败：${friendlyErrorMessage(error)}',
       );
     }
-  }
-}
-
-/// Banner shown above the grid in 全部 view when favourites exist, so starred
-/// works read as a distinct group instead of silently jumping to the top.
-class _FavoritesHeader extends StatelessWidget {
-  const _FavoritesHeader({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Icon(Icons.favorite_rounded, size: 16, color: colors.tertiary),
-        const SizedBox(width: 6),
-        Text(
-          '已收藏 $count 张',
-          style: Theme.of(
-            context,
-          ).textTheme.labelMedium?.copyWith(color: colors.onSurfaceVariant),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Divider(color: colors.outlineVariant.withValues(alpha: 0.4)),
-        ),
-      ],
-    );
   }
 }
 

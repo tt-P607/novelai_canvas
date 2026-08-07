@@ -76,7 +76,7 @@ void main() {
     expect(await repository.find(task.id), isNull);
   });
 
-  test('收藏任务排在收藏组内按创建时间排序，且不刷新 updatedAt', () async {
+  test('列表按创建时间倒序，收藏不置顶，且不刷新 updatedAt', () async {
     final older = _task(
       status: GenerationTaskStatus.completed,
       id: 'task-older',
@@ -103,11 +103,11 @@ void main() {
     await repository.save(plain);
 
     final list = await repository.list(limit: 100);
+    // Newest first regardless of favourite state — favourites are not pinned.
     expect(list.map((t) => t.id).toList(), [
-      // favourites first (newer created first in list), then plain
+      'task-plain',
       'task-newer',
       'task-older',
-      'task-plain',
     ]);
 
     final before = await repository.find('task-plain');

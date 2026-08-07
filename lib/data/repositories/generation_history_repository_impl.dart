@@ -88,11 +88,10 @@ class GenerationHistoryRepositoryImpl implements GenerationHistoryRepository {
       GenerationTaskColumns.table,
       where: where,
       whereArgs: whereArgs,
-      // Favorites first, then by creation time — createdAt (not updatedAt) so
-      // toggling a favourite never reorders the timeline unexpectedly.
-      orderBy:
-          '${GenerationTaskColumns.favorite} DESC, '
-          '${GenerationTaskColumns.createdAt} DESC',
+      // Timeline is purely by creation time — createdAt (not updatedAt) so
+      // toggling a favourite never reorders the list. Favourites are not
+      // pinned to the top; they live in their own collection.
+      orderBy: '${GenerationTaskColumns.createdAt} DESC',
       offset: offset,
       limit: limit,
     );
