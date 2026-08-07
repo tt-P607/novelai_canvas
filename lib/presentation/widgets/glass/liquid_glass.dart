@@ -63,17 +63,18 @@ abstract final class GlassSpec {
   /// The molten rim colour. The top edge is kept brighter via [rimTop], while
   /// this single tone is still exposed for callers that need a flat edge tint
   /// (e.g. message bubbles).
-  static Color edge(ColorScheme colors, {double opacity = 0.26}) =>
+  static Color edge(ColorScheme colors, {double opacity = 0.18}) =>
       Colors.white.withValues(alpha: opacity);
 
   /// Bright top rim — the strongest highlight on the glass wall, where the
-  /// light catches the curved upper edge.
-  static Color rimTop(ColorScheme colors, {double opacity = 0.42}) =>
+  /// light catches the curved upper edge. Kept thin and subtle so the glass
+  /// reads as liquid rather than a thick outlined slab.
+  static Color rimTop(ColorScheme colors, {double opacity = 0.26}) =>
       Colors.white.withValues(alpha: opacity);
 
   /// Dimmer bottom rim that makes the lower wall fall into shadow, giving the
   /// slab a rounded, three-dimensional lip instead of a flat outline.
-  static Color rimBottom(ColorScheme colors, {double opacity = 0.14}) =>
+  static Color rimBottom(ColorScheme colors, {double opacity = 0.10}) =>
       Colors.white.withValues(alpha: opacity);
 
   /// Translucent fill layered over the blurred backdrop (legacy tint helper).
@@ -198,14 +199,15 @@ class _LiquidSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Border draws inside the clip; the rim stroke spans the whole edge.
-    const rimWidth = 1.4;
+    // Thin and low-opacity so the glass stays liquid, not a thick outline.
+    const rimWidth = 1.0;
     return DecoratedBox(
       // Outer wall: a soft shadow inside the clip gives the rim a liquid,
       // rounded lip instead of a flat outline.
       decoration: BoxDecoration(
         borderRadius: borderRadius,
         border: Border.all(
-          color: GlassSpec.rimTop(colors, opacity: 0.38),
+          color: GlassSpec.rimTop(colors, opacity: 0.24),
           width: rimWidth,
         ),
       ),
