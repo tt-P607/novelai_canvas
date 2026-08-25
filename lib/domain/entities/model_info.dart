@@ -31,17 +31,31 @@ class ModelInfo extends Equatable {
 abstract final class BuiltInModels {
   static const all = <ModelInfo>[
     ModelInfo(
+      id: 'nai-diffusion-5-full',
+      name: 'NAI Diffusion V5 Full',
+      description:
+          '最新 V5 全量模型，艺术表现力与细节丰富。支持多语言文本绘制，'
+          '不支持 Vibe Transfer 与精确角色参考。',
+    ),
+    ModelInfo(
+      id: 'nai-diffusion-5-curated',
+      name: 'NAI Diffusion V5 Curated',
+      description:
+          '基于精选图像子集训练的最新 V5 模型，构图稳定五官精致。'
+          '不支持 Vibe Transfer 与精确角色参考。',
+    ),
+    ModelInfo(
       id: 'nai-diffusion-4-5-full',
       name: 'NAI Diffusion V4.5 Full',
       description:
-          '最新最强的全量模型，广泛适用于各种主题和风格，生成质量最高。'
-          '支持 V4.5 角色参考、Vibe Transfer 及导演工具。',
+          '广泛适用于各种主题和风格，生成质量极高。'
+          '支持 V4.5 精确角色参考、Vibe Transfer 及导演工具。',
     ),
     ModelInfo(
       id: 'nai-diffusion-4-5-curated',
       name: 'NAI Diffusion V4.5 Curated',
       description:
-          '基于精选图像子集训练，减少意外生成内容的最新模型。'
+          '基于精选图像子集训练的 V4.5 模型，减少意外生成内容。'
           '推荐用于流式生成场景。',
     ),
     ModelInfo(
@@ -65,6 +79,25 @@ abstract final class BuiltInModels {
       description: '上一代 Furry 特化模型，仅保留向后兼容。',
     ),
   ];
+
+  static bool isV5(String id) => id.contains('nai-diffusion-5');
+
+  static bool isV4(String id) =>
+      id.contains('nai-diffusion-4') && !id.contains('nai-diffusion-4-5');
+
+  static bool isV4_5(String id) => id.contains('nai-diffusion-4-5');
+
+  static bool supportsVibe(String id) => !isV5(id);
+
+  static bool supportsCharacterReference(String id) => isV4_5(id);
+
+  static String inpaintModelFor(String id) {
+    if (id.endsWith('-inpainting')) return id;
+    if (isV5(id)) {
+      return 'nai-diffusion-5-full-inpainting';
+    }
+    return '$id-inpainting';
+  }
 
   static String nameFor(String id) {
     final match = all.where((model) => model.id == id).firstOrNull;

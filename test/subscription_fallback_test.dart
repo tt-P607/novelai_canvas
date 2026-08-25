@@ -27,7 +27,7 @@ void main() {
     expect(info.tier, 3);
     expect(info.tierName, 'Opus');
     expect(adapter.requestedUrls, [
-      'https://gateway.example.com/_api/user/subscription',
+      'https://gateway.example.com/origin/user/subscription',
     ]);
   });
 
@@ -53,7 +53,7 @@ void main() {
     );
     // Exactly one request, and it stayed on the gateway.
     expect(adapter.requestedUrls, [
-      'https://gateway.example.com/_api/user/subscription',
+      'https://gateway.example.com/origin/user/subscription',
     ]);
   });
 

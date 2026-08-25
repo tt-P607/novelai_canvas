@@ -32,6 +32,52 @@ void main() {
     expect((json['parameters'] as Map)['width'], 832);
   });
 
+  test('V5 文生图使用 params_version 4 且保留 v4 prompt 结构', () {
+    const v5Parameters = NativeGenerationParametersDto(
+      width: 832,
+      height: 1216,
+      seed: 42,
+      negativePrompt: 'lowres',
+      v4Prompt: V4PromptDto(baseCaption: '1girl'),
+      v4NegativePrompt: V4PromptDto(baseCaption: 'lowres', legacyUc: false),
+      paramsVersion: 4,
+    );
+    const builder = NativeTextToImageRequestBuilder();
+    final json = builder.build(
+      const NativeTextToImageRequestDto(
+        prompt: '1girl',
+        model: 'nai-diffusion-5-full',
+        parameters: v5Parameters,
+      ),
+    );
+
+    expect(json['model'], 'nai-diffusion-5-full');
+    final params = json['parameters'] as Map;
+    expect(params['params_version'], 4);
+    expect(params.containsKey('v4_prompt'), isTrue);
+    expect(params.containsKey('reference_image_multiple'), isFalse);
+  });
+
+  test('V5 局部重绘映射到 nai-diffusion-5-full-inpainting', () {
+    final inpaintRequest = NativeInpaintRequestDto(
+      prompt: 'inpaint',
+      model: 'nai-diffusion-5-curated',
+      parameters: NativeGenerationParametersDto(
+        width: 832,
+        height: 1216,
+        seed: 42,
+        negativePrompt: 'lowres',
+        paramsVersion: 4,
+      ),
+      image: 'source',
+      mask: 'mask',
+    );
+    final json = const NativeInpaintRequestBuilder().build(inpaintRequest);
+
+    expect(json['model'], 'nai-diffusion-5-full-inpainting');
+    expect((json['parameters'] as Map)['mask'], 'mask');
+  });
+
   test('图生图与局部重绘构建器不共享可变请求体', () {
     final imageRequest = NativeImageToImageRequestDto(
       prompt: 'img2img',

@@ -33,10 +33,13 @@ class AdvancedReferenceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Character reference is not supported by the local-repainting (inpaint)
-    // endpoint, so its tile is hidden there while Vibe and multi-character
-    // remain usable in every mode.
-    final showCharacterReference = controller.mode != GenerationMode.inpaint;
+    // Character reference is only offered by the native V4.5 endpoint; V5
+    // rejects both Vibe and character references upstream, so their tiles are
+    // hidden while Vibe and multi-character stay usable in every other mode.
+    final showCharacterReference =
+        controller.mode != GenerationMode.inpaint &&
+        controller.supportsCharacterReference;
+    final showVibe = controller.supportsVibe;
     return LiquidGlass(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -44,22 +47,24 @@ class AdvancedReferenceCard extends StatelessWidget {
         children: [
           Text('高级参考', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
-          const Text('Vibe 控制风格；角色参考仅支持原生 V4.5；多角色最多 6 个。'),
+          const Text('Vibe 控制风格；角色参考仅支持原生 V4.5；V5 不支持 Vibe 与角色参考。'),
           const Divider(height: 28),
-          _sectionHeader(
-            title: 'Vibe Transfer',
-            icon: Icons.add_photo_alternate_outlined,
-            onPressed: onAddVibe,
-          ),
-          ...controller.vibeReferences.indexed.map(
-            (entry) => _VibeTile(
-              index: entry.$1,
-              reference: entry.$2,
-              controller: controller,
-              onEncode: () => onEncodeVibe(entry.$1),
-              onExport: () => onExportVibe(entry.$1),
+          if (showVibe) ...[
+            _sectionHeader(
+              title: 'Vibe Transfer',
+              icon: Icons.add_photo_alternate_outlined,
+              onPressed: onAddVibe,
             ),
-          ),
+            ...controller.vibeReferences.indexed.map(
+              (entry) => _VibeTile(
+                index: entry.$1,
+                reference: entry.$2,
+                controller: controller,
+                onEncode: () => onEncodeVibe(entry.$1),
+                onExport: () => onExportVibe(entry.$1),
+              ),
+            ),
+          ],
           if (showCharacterReference) ...[
             const Divider(height: 28),
             _sectionHeader(

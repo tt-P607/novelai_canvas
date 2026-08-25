@@ -7,21 +7,19 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/errors/app_exception.dart';
 import '../../core/network/backend_mode.dart';
-import '../../core/network/image_response_decoder.dart';
 import '../../core/storage/character_reference_preprocessor.dart';
 import '../../domain/entities/advanced_generation.dart';
 import '../../domain/entities/generated_image.dart';
 import '../../domain/entities/generation_task.dart';
 import '../../domain/entities/image_generation_result.dart';
+import '../../domain/entities/model_info.dart';
 import '../../domain/repositories/generation_repository.dart';
-import '../api/gateway/dto/gateway_chat_request_dto.dart';
-import '../api/gateway/dto/gateway_vibe_transfer_request_dto.dart';
 import '../api/gateway/dto/gateway_image_to_image_request_dto.dart';
 import '../api/gateway/dto/gateway_inpaint_request_dto.dart';
-import '../api/gateway/services/gateway_chat_service.dart';
-import '../api/gateway/services/gateway_vibe_transfer_service.dart';
+import '../api/gateway/dto/gateway_text_to_image_request_dto.dart';
 import '../api/gateway/services/gateway_image_to_image_service.dart';
 import '../api/gateway/services/gateway_inpaint_service.dart';
+import '../api/gateway/services/gateway_text_to_image_service.dart';
 import '../api/native/dto/native_encode_vibe_request_dto.dart';
 import '../api/native/dto/native_generation_parameters_dto.dart';
 import '../api/native/dto/native_image_to_image_request_dto.dart';
@@ -40,8 +38,7 @@ class GenerationRepositoryImpl implements GenerationRepository {
     required NativeImageToImageService nativeImageToImageService,
     required NativeInpaintService nativeInpaintService,
     required NativeStreamService nativeStreamService,
-    required GatewayChatService gatewayChatService,
-    required GatewayVibeTransferService gatewayVibeTransferService,
+    required GatewayTextToImageService gatewayTextToImageService,
     required GatewayImageToImageService gatewayImageToImageService,
     required GatewayInpaintService gatewayInpaintService,
     required NativeEncodeVibeService nativeEncodeVibeService,
@@ -50,8 +47,7 @@ class GenerationRepositoryImpl implements GenerationRepository {
        _nativeImageToImageService = nativeImageToImageService,
        _nativeInpaintService = nativeInpaintService,
        _nativeStreamService = nativeStreamService,
-       _gatewayChatService = gatewayChatService,
-       _gatewayVibeTransferService = gatewayVibeTransferService,
+       _gatewayTextToImageService = gatewayTextToImageService,
        _gatewayImageToImageService = gatewayImageToImageService,
        _gatewayInpaintService = gatewayInpaintService,
        _nativeEncodeVibeService = nativeEncodeVibeService,
@@ -61,8 +57,7 @@ class GenerationRepositoryImpl implements GenerationRepository {
   final NativeImageToImageService _nativeImageToImageService;
   final NativeInpaintService _nativeInpaintService;
   final NativeStreamService _nativeStreamService;
-  final GatewayChatService _gatewayChatService;
-  final GatewayVibeTransferService _gatewayVibeTransferService;
+  final GatewayTextToImageService _gatewayTextToImageService;
   final GatewayImageToImageService _gatewayImageToImageService;
   final GatewayInpaintService _gatewayInpaintService;
   final NativeEncodeVibeService _nativeEncodeVibeService;
@@ -134,30 +129,26 @@ class GenerationRepositoryImpl implements GenerationRepository {
   /// Gateway streaming falls back to Chat Completions SSE when the image
   /// endpoint cannot stream through OpenAI-compatible proxies (new-api etc.).
   ///
-  /// The Chat stream wraps the final image in a single SSE chunk — there are
-  /// no intermediate progressive frames — but it works reliably through
-  /// proxies that only support `stream` on `/v1/chat/completions`.
+  /// Gateway streaming currently resolves through the non-streaming
+  /// `/v1/images/generations` request and yields the final frame immediately.
+  /// new-api does not expose `/v1/chat/completions` and its image SSE is a
+  /// native NovelAI event stream, so a single final-frame preview is the
+  /// reliable cross-gateway contract.
   Stream<GenerationPreview> _streamGateway(
     GenerationTask task,
     CancelToken cancelToken,
   ) async* {
-    final spec = task.spec;
-    final request = _gatewayChatPlainRequest(spec);
-    await for (final event in _gatewayChatService.stream(request)) {
-      final content = event.content;
-      if (content != null && content.isNotEmpty) {
-        final image = ImageResponseDecoder.decodeChatMarkdown(content);
-        final bytes = image.bytes;
-        if (bytes != null) {
-          yield GenerationPreview(
-            taskId: task.id,
-            step: 0,
-            isFinal: true,
-            imageBytes: bytes,
-          );
-        }
+    final result = await _executeGateway(task, cancelToken);
+    for (final image in result.images) {
+      final bytes = image.bytes;
+      if (bytes != null) {
+        yield GenerationPreview(
+          taskId: task.id,
+          step: 0,
+          isFinal: true,
+          imageBytes: bytes,
+        );
       }
-      if (event.finished) break;
     }
   }
 
@@ -199,18 +190,12 @@ class GenerationRepositoryImpl implements GenerationRepository {
       'characters=${spec.characterPrompts.length}',
     );
     return switch (spec.mode) {
-      GenerationMode.textToImage when _enabledVibes(spec).isNotEmpty =>
-        _gatewayVibeTransferService.generate(
-          await _gatewayVibeRequest(spec),
-          cancelToken: cancelToken,
-        ),
-      // All text-to-image goes through /v1/chat/completions because many
-      // OpenAI-compatible proxies (e.g. newapi) do not register the
-      // /v1/images/generations DALL-E endpoint.
-      GenerationMode.textToImage when spec.characterPrompts.isNotEmpty =>
-        _gatewayChatService.complete(_gatewayCharacterRequest(spec)),
-      GenerationMode.textToImage => _gatewayChatService.complete(
-        _gatewayChatPlainRequest(spec),
+      // All gateway text-to-image (plain, multi-character and Vibe) goes
+      // through /v1/images/generations with NovelAI params nested in `params`
+      // — new-api registers only this image endpoint.
+      GenerationMode.textToImage => _gatewayTextToImageService.generate(
+        await _gatewayTextToImageDto(spec),
+        cancelToken: cancelToken,
       ),
       GenerationMode.imageToImage => _gatewayImageToImageService.generate(
         await _gatewayImg2ImgDto(spec),
@@ -230,7 +215,7 @@ class GenerationRepositoryImpl implements GenerationRepository {
     prompt: spec.prompt,
     image: await _readBase64(spec.sourceImagePath, '图生图源图片'),
     strength: spec.strength,
-    addOriginalImage: spec.addOriginalImage,
+    noise: spec.noise,
     width: spec.width,
     height: spec.height,
     scale: spec.scale,
@@ -240,7 +225,7 @@ class GenerationRepositoryImpl implements GenerationRepository {
     seed: spec.seed,
     negativePrompt: spec.negativePrompt,
     quality: spec.quality,
-    ucPreset: spec.ucPreset,
+    ucPreset: spec.ucPreset.toString(),
     responseFormat: 'b64_json',
   );
 
@@ -252,8 +237,10 @@ class GenerationRepositoryImpl implements GenerationRepository {
     image: await _readBase64(spec.sourceImagePath, '局部重绘源图片'),
     mask: await _readBase64(spec.maskImagePath, '局部重绘蒙版'),
     strength: spec.strength,
-    addOriginalImage: spec.addOriginalImage,
+    noise: spec.noise,
     size: spec.size,
+    width: spec.width,
+    height: spec.height,
     scale: spec.scale,
     cfgRescale: spec.cfgRescale,
     sampler: spec.sampler,
@@ -261,7 +248,7 @@ class GenerationRepositoryImpl implements GenerationRepository {
     seed: spec.seed,
     negativePrompt: spec.negativePrompt,
     quality: spec.quality,
-    ucPreset: spec.ucPreset,
+    ucPreset: spec.ucPreset.toString(),
     responseFormat: 'b64_json',
   );
 
@@ -307,78 +294,91 @@ class GenerationRepositoryImpl implements GenerationRepository {
   Future<NativeGenerationParametersDto> _nativeParameters(
     GenerationSpec spec, {
     CancelToken? cancelToken,
-  }) async => NativeGenerationParametersDto(
-    width: spec.width,
-    height: spec.height,
-    seed: spec.seed,
-    negativePrompt: spec.negativePrompt,
-    steps: spec.steps,
-    scale: spec.scale,
-    sampler: spec.sampler,
-    sampleCount: spec.sampleCount,
-    noiseSchedule: spec.noiseSchedule,
-    cfgRescale: spec.cfgRescale,
-    qualityToggle: spec.quality,
-    ucPreset: spec.ucPreset,
-    addOriginalImage: spec.addOriginalImage,
-    v4Prompt: V4PromptDto(
-      baseCaption: spec.prompt,
-      characterCaptions: _enabledCharacters(spec)
-          .map(
-            (character) => V4CharacterCaptionDto(
-              caption: character.prompt,
-              centers: [_nativeCenter(character.position)],
-            ),
-          )
-          .toList(),
-      useCoords: _enabledCharacters(spec).isNotEmpty,
-    ),
-    v4NegativePrompt: V4PromptDto(
-      baseCaption: spec.negativePrompt,
-      characterCaptions: _enabledCharacters(spec)
-          .map(
-            (character) => V4CharacterCaptionDto(
-              caption: character.negativePrompt,
-              centers: [_nativeCenter(character.position)],
-            ),
-          )
-          .toList(),
-      legacyUc: false,
-    ),
-    characterPrompts: _enabledCharacters(spec)
-        .map(
-          (character) => CharacterPromptDto(
-            prompt: character.prompt,
-            negativePrompt: character.negativePrompt,
-            center: _nativeCenter(character.position),
-          ),
-        )
-        .toList(),
-    vibeData: await _nativeVibeData(spec, cancelToken: cancelToken),
-    vibeStrengths: _enabledVibes(
-      spec,
-    ).map((reference) => reference.strength).toList(),
-    vibeInformationExtracted: _enabledVibes(
-      spec,
-    ).map((reference) => reference.informationExtracted).toList(),
-    directorReferences: await Future.wait(
-      spec.characterReferences
-          .where((reference) => reference.enabled)
-          .map(
-            (reference) async => DirectorReferenceDto(
-              image: await _readProcessedCharacterReference(
-                reference.imagePath,
+  }) async {
+    final supportsVibe = BuiltInModels.supportsVibe(spec.model);
+    final supportsCharacterReference = BuiltInModels.supportsCharacterReference(
+      spec.model,
+    );
+    return NativeGenerationParametersDto(
+      paramsVersion: BuiltInModels.isV5(spec.model) ? 4 : 3,
+      width: spec.width,
+      height: spec.height,
+      seed: spec.seed,
+      negativePrompt: spec.negativePrompt,
+      steps: spec.steps,
+      scale: spec.scale,
+      sampler: spec.sampler,
+      sampleCount: spec.sampleCount,
+      noiseSchedule: spec.noiseSchedule,
+      cfgRescale: spec.cfgRescale,
+      qualityToggle: spec.quality,
+      ucPreset: spec.ucPreset,
+      addOriginalImage: spec.addOriginalImage,
+      v4Prompt: V4PromptDto(
+        baseCaption: spec.prompt,
+        characterCaptions: _enabledCharacters(spec)
+            .map(
+              (character) => V4CharacterCaptionDto(
+                caption: character.prompt,
+                centers: [_nativeCenter(character.position)],
               ),
-              description: reference.description,
-              strength: reference.strength,
-              fidelity: reference.fidelity,
-              informationExtracted: reference.informationExtracted,
+            )
+            .toList(),
+        useCoords: _enabledCharacters(spec).isNotEmpty,
+      ),
+      v4NegativePrompt: V4PromptDto(
+        baseCaption: spec.negativePrompt,
+        characterCaptions: _enabledCharacters(spec)
+            .map(
+              (character) => V4CharacterCaptionDto(
+                caption: character.negativePrompt,
+                centers: [_nativeCenter(character.position)],
+              ),
+            )
+            .toList(),
+        legacyUc: false,
+      ),
+      characterPrompts: _enabledCharacters(spec)
+          .map(
+            (character) => CharacterPromptDto(
+              prompt: character.prompt,
+              negativePrompt: character.negativePrompt,
+              center: _nativeCenter(character.position),
             ),
-          ),
-    ),
-    controlnetStrength: spec.controlnetStrength,
-    normalizeReferenceStrength: spec.normalizeReferenceStrength,
-  );
+          )
+          .toList(),
+      vibeData: supportsVibe
+          ? await _nativeVibeData(spec, cancelToken: cancelToken)
+          : const [],
+      vibeStrengths: supportsVibe
+          ? _enabledVibes(spec).map((reference) => reference.strength).toList()
+          : const [],
+      vibeInformationExtracted: supportsVibe
+          ? _enabledVibes(
+              spec,
+            ).map((reference) => reference.informationExtracted).toList()
+          : const [],
+      directorReferences: supportsCharacterReference
+          ? await Future.wait(
+              spec.characterReferences
+                  .where((reference) => reference.enabled)
+                  .map(
+                    (reference) async => DirectorReferenceDto(
+                      image: await _readProcessedCharacterReference(
+                        reference.imagePath,
+                      ),
+                      description: reference.description,
+                      strength: reference.strength,
+                      fidelity: reference.fidelity,
+                      informationExtracted: reference.informationExtracted,
+                    ),
+                  ),
+            )
+          : const [],
+      controlnetStrength: spec.controlnetStrength,
+      normalizeReferenceStrength: spec.normalizeReferenceStrength,
+    );
+  }
 
   List<CharacterPrompt> _enabledCharacters(GenerationSpec spec) => spec
       .characterPrompts
@@ -422,92 +422,53 @@ class GenerationRepositoryImpl implements GenerationRepository {
     return values;
   }
 
-  Future<GatewayVibeTransferRequestDto> _gatewayVibeRequest(
+  Future<GatewayTextToImageRequestDto> _gatewayTextToImageDto(
     GenerationSpec spec,
   ) async {
-    final rawReferences = <String>[];
-    final encodedReferences = <String>[];
-    for (final reference in _enabledVibes(spec)) {
-      final encoded = reference.activeEncoding;
-      if (encoded != null && encoded.isNotEmpty) {
-        encodedReferences.add(encoded);
-      } else {
-        rawReferences.add(await _vibeSourceBase64(reference));
-      }
-    }
-    return GatewayVibeTransferRequestDto(
+    // Only already-encoded Vibe references can go through the OpenAI gateway:
+    // new-api rejects uncached live Vibe encoding on the standard product.
+    final vibes = BuiltInModels.supportsVibe(spec.model)
+        ? _enabledVibes(
+            spec,
+          ).where((reference) => reference.hasEncoding).toList()
+        : const <VibeReference>[];
+    return GatewayTextToImageRequestDto(
       model: spec.model,
       prompt: spec.prompt,
-      referenceImages: rawReferences,
-      encodedReferences: encodedReferences,
-      referenceStrengths: _enabledVibes(
-        spec,
-      ).map((reference) => reference.strength).toList(),
-      informationExtractedValues: _enabledVibes(
-        spec,
-      ).map((reference) => reference.informationExtracted).toList(),
+      n: spec.sampleCount,
       width: spec.width,
       height: spec.height,
-      responseFormat: 'b64_json',
-    );
-  }
-
-  GatewayChatRequestDto _gatewayCharacterRequest(GenerationSpec spec) {
-    final characters = _enabledCharacters(spec)
-        .map(
-          (character) => {
-            'prompt': character.prompt,
-            'uc': character.negativePrompt,
-            'center': character.position.toJson(),
-            'enabled': true,
-          },
-        )
-        .toList();
-    return GatewayChatRequestDto(
-      model: spec.model,
-      messages: [
-        GatewayChatMessageDto(role: 'user', content: spec.prompt),
-        GatewayChatMessageDto(
-          role: 'system',
-          content: 'Negative prompt: ${spec.negativePrompt}',
-        ),
-        GatewayChatMessageDto(
-          role: 'system',
-          content: 'Characters: ${jsonEncode(characters)}',
-        ),
-      ],
+      size: spec.size,
+      negativePrompt: spec.negativePrompt,
+      steps: spec.steps,
       scale: spec.scale,
       cfgRescale: spec.cfgRescale,
-      width: spec.width,
-      height: spec.height,
       sampler: spec.sampler,
       noiseSchedule: spec.noiseSchedule,
+      seed: spec.seed == 0 ? null : spec.seed,
+      quality: spec.quality,
+      ucPreset: spec.ucPreset.toString(),
+      characters: _enabledCharacters(spec)
+          .map(
+            (character) => {
+              'prompt': character.prompt,
+              'uc': character.negativePrompt,
+              'center': character.position.toJson(),
+              'enabled': true,
+            },
+          )
+          .toList(),
+      encodedReferences: vibes
+          .map((reference) => reference.activeEncoding ?? '')
+          .where((value) => value.isNotEmpty)
+          .toList(),
+      referenceStrengths: vibes.map((reference) => reference.strength).toList(),
+      informationExtractedValues: vibes
+          .map((reference) => reference.informationExtracted)
+          .toList(),
       responseFormat: 'b64_json',
     );
   }
-
-  /// Plain text-to-image via the Chat endpoint. Many OpenAI-compatible
-  /// proxies (e.g. newapi) only register `/v1/chat/completions`, so this is
-  /// the default path for gateway text-to-image without character prompts.
-  GatewayChatRequestDto _gatewayChatPlainRequest(GenerationSpec spec) =>
-      GatewayChatRequestDto(
-        model: spec.model,
-        messages: [
-          GatewayChatMessageDto(role: 'user', content: spec.prompt),
-          if (spec.negativePrompt.trim().isNotEmpty)
-            GatewayChatMessageDto(
-              role: 'system',
-              content: 'Negative prompt: ${spec.negativePrompt}',
-            ),
-        ],
-        scale: spec.scale,
-        cfgRescale: spec.cfgRescale,
-        width: spec.width,
-        height: spec.height,
-        sampler: spec.sampler,
-        noiseSchedule: spec.noiseSchedule,
-        responseFormat: 'b64_json',
-      );
 
   CancelToken _createCancelToken(String taskId) {
     _cancelTokens.remove(taskId)?.cancel('同一任务已开始新的请求。');

@@ -119,6 +119,7 @@ class HistoryCard extends StatelessWidget {
   /// Keeps the model label short so the metadata row fits one line.
   String _shortModel(String model) {
     if (model.startsWith('director-')) return '工具';
+    if (model.contains('nai-diffusion-5')) return 'V5';
     if (model.contains('nai-diffusion-4-5')) return 'V4.5';
     if (model.contains('nai-diffusion-4')) return 'V4';
     if (model.contains('nai-diffusion-3')) return 'V3';

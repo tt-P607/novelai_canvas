@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.5.2 - 2026-08-25
+
+- 修复网关模式 `uc_preset` 报错：new-api 的 Go 契约将 `NaiParams.uc_preset` 定义为字符串，客户端此前发送整数导致 `params 解析失败: cannot unmarshal number`。网关文生图/图生图/局部重绘的 `uc_preset` 现统一转成字符串发送。
+
+## 2.5.1 - 2026-08-25
+
+- 修复原生模式 404：Custom 原生网关前缀由废弃的 `/_api` 改为官方原生透明网关唯一公开入口 `/origin`（文档 `base_url = 域名/origin`，客户端追加 `/ai/*`、`/user/*`）。兼容用户粘贴根地址或已含 `/origin` / 完整生成地址。
+- 修复网关模式「无效的 URL(POST /v1/chat/completions)」：网关文生图（普通/多角色/Vibe）由 `/v1/chat/completions` 改为 new-api 唯一注册的 `/v1/images/generations`；NovelAI 高级参数移入 `params` 对象（`steps`/`scale`/`sampler`/`negative_prompt`/`characters`/`reference_image_multiple`），`response_format` 固定 `b64_json`。
+- 网关图生图/局部重绘同样将高级参数移入 `params` 对象。
+- 网关流式预览改为在 images/generations 上即时返回最终帧（new-api 无 chat completions，且图片 SSE 为 NovelAI 原生协议）。
+- 设置页与引导页原生地址文案更新为 `/origin`。
+
+## 2.5.0 - 2026-08-25
+
+- 新增 NovelAI Diffusion **V5** 模型支持：内置模型目录加入 `nai-diffusion-5-full` 与 `nai-diffusion-5-curated`（V5 Full / V5 Curated），适配 new-api 中转站的模型列表。
+- V5 请求使用 `params_version: 4` 的 V4 Prompt 结构；局部重绘统一映射到 `nai-diffusion-5-full-inpainting`（Curated 同样映射到 Full Inpainting）。
+- V5 不支持 Vibe Transfer 与精确角色参考：选中 V5 时高级参考面板隐藏这两类入口，提交校验会拦截并提示；原生请求体不再携带 `reference_image_multiple` / `director_reference_*` 等 V5 不允许的字段，避免上游 500。
+- 历史卡片模型标签新增 V5 显示。
+- 新增 V5 能力规则与请求契约测试（`v5_model_capability_test.dart`、`native_contract_test.dart`）。
+
 ## 1.15.13 - 2026-07-29
 
 - 修复导演工具结果不刷新到作品页：[`ImageToolsController`](novelai_canvas/lib/presentation/controllers/image_tools_controller.dart:14) 注入 `HistoryController`，保存后调用 `load()` 刷新作品列表。

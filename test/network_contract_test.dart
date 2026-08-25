@@ -46,7 +46,7 @@ void main() {
   test('连接错误会显示实际目标主机，便于确认请求是否在客户端被拦截', () {
     final request = RequestOptions(
       path: '/ai/generate-image',
-      baseUrl: 'http://gateway.example.com:31555/_api',
+      baseUrl: 'http://gateway.example.com:31555/origin',
     );
     final mapped = NetworkErrorMapper.map(
       DioException(
@@ -90,7 +90,7 @@ void main() {
     expect(balance.message, contains('Anlas'));
   });
 
-  test('原生接口填写网关 URL 后，图片与账户请求都发往 /_api 代理路由', () async {
+  test('原生接口填写网关 URL 后，图片与账户请求都发往 /origin 代理路由', () async {
     const settings = AppSettings(
       onboardingCompleted: true,
       backendMode: BackendMode.native,
@@ -107,13 +107,13 @@ void main() {
     await dio.post<Object?>('/ai/generate-image');
     expect(
       adapter.lastUri.toString(),
-      'https://gateway.example.com/_api/ai/generate-image',
+      'https://gateway.example.com/origin/ai/generate-image',
     );
 
     await dio.get<Object?>('/user/subscription');
     expect(
       adapter.lastUri.toString(),
-      'https://gateway.example.com/_api/user/subscription',
+      'https://gateway.example.com/origin/user/subscription',
     );
   });
 
@@ -169,7 +169,7 @@ void main() {
     );
   });
 
-  test('用户改成其他 URL 后不拆分域名，并自动补全 /_api', () {
+  test('用户改成其他 URL 后不拆分域名，并自动补全 /origin', () {
     const settings = AppSettings(
       onboardingCompleted: true,
       backendMode: BackendMode.native,
@@ -179,11 +179,11 @@ void main() {
 
     expect(
       NativeEndpointResolver.imageBaseUrl(settings),
-      'https://gateway.example.com/_api',
+      'https://gateway.example.com/origin',
     );
     expect(
       NativeEndpointResolver.accountBaseUrl(settings),
-      'https://gateway.example.com/_api',
+      'https://gateway.example.com/origin',
     );
   });
 
@@ -192,7 +192,7 @@ void main() {
       onboardingCompleted: true,
       backendMode: BackendMode.native,
       nativeEndpointBaseUrl:
-          'http://gateway.example.com:31555/_api/ai/generate-image',
+          'http://gateway.example.com:31555/origin/ai/generate-image',
       gatewayEndpointBaseUrl: '',
     );
     final dio = Dio();
@@ -206,7 +206,7 @@ void main() {
 
     expect(
       adapter.lastUri.toString(),
-      'http://gateway.example.com:31555/_api/ai/generate-image',
+      'http://gateway.example.com:31555/origin/ai/generate-image',
     );
   });
 
@@ -228,17 +228,17 @@ void main() {
     );
   });
 
-  test('用户已填写 /_api 时不会重复补全前缀', () {
+  test('用户已填写 /origin 时不会重复补全前缀', () {
     const settings = AppSettings(
       onboardingCompleted: true,
       backendMode: BackendMode.native,
-      nativeEndpointBaseUrl: 'https://gateway.example.com/_api/',
+      nativeEndpointBaseUrl: 'https://gateway.example.com/origin/',
       gatewayEndpointBaseUrl: '',
     );
 
     expect(
       NativeEndpointResolver.imageBaseUrl(settings),
-      'https://gateway.example.com/_api',
+      'https://gateway.example.com/origin',
     );
   });
 

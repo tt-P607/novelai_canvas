@@ -65,7 +65,8 @@ abstract final class NetworkErrorMapper {
   }
 
   static String _notFoundMessage(String path) {
-    if (path.startsWith('/_api/') ||
+    if (path.startsWith('/origin/') ||
+        path.startsWith('/_api/') ||
         path.startsWith('/ai/') ||
         path.startsWith('/user/')) {
       return '原生接口路径不存在。自定义接口会接收原始 NovelAI 路径；请确认设置中的 URL 正确，并且网关支持此路径。';

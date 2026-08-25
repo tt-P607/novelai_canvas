@@ -1,3 +1,4 @@
+import '../../../../domain/entities/model_info.dart';
 import '../../common/api_request_builder.dart';
 import 'native_generation_parameters_dto.dart';
 
@@ -37,9 +38,7 @@ class NativeInpaintRequestBuilder
     NativeInpaintRequestDto request, {
     List<JsonMap> patches = const [],
   }) {
-    final model = request.model.endsWith('-inpainting')
-        ? request.model
-        : '${request.model}-inpainting';
+    final model = BuiltInModels.inpaintModelFor(request.model);
     final parameters = request.parameters.toJson()
       ..addAll({
         'image': request.image,

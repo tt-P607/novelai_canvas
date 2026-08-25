@@ -6,13 +6,12 @@ import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/api/danbooru/danbooru_service.dart';
-import '../../data/api/gateway/services/gateway_chat_service.dart';
 import '../../data/api/gateway/services/gateway_director_services.dart';
 import '../../data/api/gateway/services/gateway_image_to_image_service.dart';
 import '../../data/api/gateway/services/gateway_inpaint_service.dart';
 import '../../data/api/gateway/services/gateway_models_service.dart';
+import '../../data/api/gateway/services/gateway_text_to_image_service.dart';
 import '../../data/api/gateway/services/gateway_upscale_service.dart';
-import '../../data/api/gateway/services/gateway_vibe_transfer_service.dart';
 import '../../data/api/native/services/native_director_service.dart';
 import '../../data/api/native/services/native_encode_vibe_service.dart';
 import '../../data/api/native/services/native_image_to_image_service.dart';
@@ -197,10 +196,9 @@ void _registerApiServices() {
   getIt.registerLazySingleton(() => NativeUserDataService(nativeDio));
 
   getIt.registerLazySingleton(() => GatewayModelsService(gatewayDio));
-  getIt.registerLazySingleton(() => GatewayChatService(gatewayDio));
+  getIt.registerLazySingleton(() => GatewayTextToImageService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayImageToImageService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayInpaintService(gatewayDio));
-  getIt.registerLazySingleton(() => GatewayVibeTransferService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayUpscaleService(gatewayDio));
   getIt.registerLazySingleton(() => GatewayDeclutterService(gatewayDio));
   getIt.registerLazySingleton(
@@ -222,8 +220,7 @@ void _registerRepositories() {
       nativeInpaintService: getIt(),
       nativeStreamService: getIt(),
       nativeEncodeVibeService: getIt(),
-      gatewayChatService: getIt(),
-      gatewayVibeTransferService: getIt(),
+      gatewayTextToImageService: getIt(),
       gatewayImageToImageService: getIt(),
       gatewayInpaintService: getIt(),
     ),

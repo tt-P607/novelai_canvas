@@ -208,6 +208,11 @@ class GenerationController extends ChangeNotifier {
   /// Opus is subscription tier 3; only it grants the free low-cost sample.
   bool isOpus = false;
 
+  /// V5 models do not support Vibe Transfer or character references.
+  bool get supportsVibe => BuiltInModels.supportsVibe(model);
+  bool get supportsCharacterReference =>
+      BuiltInModels.supportsCharacterReference(model);
+
   /// Null until the tier has been read at least once. The cost preview stays
   /// provisional in that state instead of claiming the account pays full price.
   int? subscriptionTier;
@@ -701,19 +706,23 @@ class GenerationController extends ChangeNotifier {
     if (mode == GenerationMode.inpaint && maskImagePath == null) {
       return '请先绘制或选择蒙版。';
     }
-    if (characterReferences.isNotEmpty && !model.contains('4-5')) {
+    if (characterReferences.isNotEmpty && !supportsCharacterReference) {
       return '角色参考仅支持 NovelAI V4.5 模型。';
     }
     if (characterReferences.isNotEmpty &&
         _backendModeProvider() != BackendMode.native) {
       return '角色参考当前仅支持 NovelAI 原生后端。';
     }
-    if (vibeReferences.any(
-      (reference) =>
-          reference.enabled &&
-          !reference.hasEncoding &&
-          !reference.hasReencodeSource,
-    )) {
+    if (vibeReferences.any((reference) => reference.enabled) && !supportsVibe) {
+      return 'Vibe Transfer 不支持 NovelAI V5 模型。';
+    }
+    if (supportsVibe &&
+        vibeReferences.any(
+          (reference) =>
+              reference.enabled &&
+              !reference.hasEncoding &&
+              !reference.hasReencodeSource,
+        )) {
       return '当前信息提取值没有可用编码，且 Vibe 文件不含原始参考图。';
     }
     return null;

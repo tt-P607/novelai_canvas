@@ -112,6 +112,7 @@ class NativeGenerationParametersDto {
     this.addOriginalImage = false,
     this.imageFormat,
     this.skipCfgAboveSigma,
+    this.paramsVersion = 3,
   });
 
   final int width;
@@ -138,9 +139,10 @@ class NativeGenerationParametersDto {
   final bool addOriginalImage;
   final String? imageFormat;
   final double? skipCfgAboveSigma;
+  final int paramsVersion;
 
   Map<String, Object?> toJson() => {
-    'params_version': 3,
+    'params_version': paramsVersion,
     'width': width,
     'height': height,
     'steps': steps,
@@ -173,38 +175,41 @@ class NativeGenerationParametersDto {
     'characterPrompts': characterPrompts
         .map((prompt) => prompt.toJson())
         .toList(),
-    'reference_image_multiple': vibeData,
-    'reference_strength_multiple': vibeStrengths,
-    'reference_information_extracted_multiple': vibeInformationExtracted,
-    if (directorReferences.isNotEmpty) ...{
-      'director_reference_images': directorReferences
-          .map((reference) => reference.image)
-          .toList(),
-      'director_reference_descriptions': directorReferences
-          .map(
-            (reference) => {
-              'caption': {
-                'base_caption': reference.description,
-                'char_captions': <Object?>[],
+    if (paramsVersion < 4) ...{
+      'reference_image_multiple': vibeData,
+      'reference_strength_multiple': vibeStrengths,
+      'reference_information_extracted_multiple': vibeInformationExtracted,
+      if (directorReferences.isNotEmpty) ...{
+        'director_reference_images': directorReferences
+            .map((reference) => reference.image)
+            .toList(),
+        'director_reference_descriptions': directorReferences
+            .map(
+              (reference) => {
+                'caption': {
+                  'base_caption': reference.description,
+                  'char_captions': <Object?>[],
+                },
+                'legacy_uc': false,
               },
-              'legacy_uc': false,
-            },
-          )
-          .toList(),
-      'director_reference_strength_values': directorReferences
-          .map(
-            (reference) => double.parse(reference.strength.toStringAsFixed(2)),
-          )
-          .toList(),
-      'director_reference_secondary_strength_values': directorReferences
-          .map(
-            (reference) =>
-                double.parse((1 - reference.fidelity).toStringAsFixed(2)),
-          )
-          .toList(),
-      'director_reference_information_extracted': directorReferences
-          .map((reference) => reference.informationExtracted)
-          .toList(),
+            )
+            .toList(),
+        'director_reference_strength_values': directorReferences
+            .map(
+              (reference) =>
+                  double.parse(reference.strength.toStringAsFixed(2)),
+            )
+            .toList(),
+        'director_reference_secondary_strength_values': directorReferences
+            .map(
+              (reference) =>
+                  double.parse((1 - reference.fidelity).toStringAsFixed(2)),
+            )
+            .toList(),
+        'director_reference_information_extracted': directorReferences
+            .map((reference) => reference.informationExtracted)
+            .toList(),
+      },
     },
     if (imageFormat != null) 'image_format': imageFormat,
   };

@@ -24,16 +24,19 @@ abstract final class NativeEndpointResolver {
   }
 
   /// Official defaults retain NovelAI's required host split. Any other URL is
-  /// treated as the native-format gateway documented by novelai-gateway, whose
-  /// transparent NovelAI proxy is mounted under `/_api`.
+  /// treated as a NovelAI native-transparent gateway, whose single public
+  /// entry is mounted under `/origin` (the `/_api` prefix is deprecated).
   static bool _isOfficialEndpoint(String endpoint) {
     return endpoint == _normalize(AppConstants.nativeBaseUrl) ||
         endpoint == _normalize(AppConstants.nativeUserBaseUrl);
   }
 
+  /// Appends the gateway's single public native entry. Users may paste the
+  /// root address, an address already ending in `/origin`, or a full official
+  /// path; all are collapsed to the `/origin` base per the new-api contract.
   static String _withGatewayPrefix(String endpoint) {
-    if (endpoint.endsWith('/_api')) return endpoint;
-    return '$endpoint/_api';
+    if (endpoint.endsWith('/origin')) return endpoint;
+    return '$endpoint/origin';
   }
 
   static String _normalizeBase(String value) {
@@ -48,8 +51,13 @@ abstract final class NativeEndpointResolver {
     ]) {
       if (normalized.endsWith(suffix)) {
         normalized = normalized.substring(0, normalized.length - suffix.length);
-        break;
       }
+    }
+    // Strip a full /origin/... path (e.g. user pasted the generation endpoint
+    // on the gateway) so the base becomes the bare origin prefix.
+    final originMatch = RegExp(r'/origin(?:/.*)?$').firstMatch(normalized);
+    if (originMatch != null) {
+      normalized = normalized.substring(0, originMatch.start);
     }
     return normalized.replaceAll(RegExp(r'/+$'), '');
   }

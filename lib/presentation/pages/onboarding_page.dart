@@ -203,7 +203,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                             ? AppConstants.nativeBaseUrl
                             : 'https://example.com',
                         helperText: _mode == BackendMode.native
-                            ? '默认使用 NovelAI 官方地址；改为 novelai-gateway 根地址时会自动补全 /_api。'
+                            ? '默认使用 NovelAI 官方地址；改为中转站根地址时会自动补全 /origin。'
                             : 'OpenAI 接口必须填写兼容服务地址，无需在末尾填写 /v1。',
                         prefixIcon: const Icon(Icons.link_rounded),
                       ),

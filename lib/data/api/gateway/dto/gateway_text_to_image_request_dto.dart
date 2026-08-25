@@ -1,17 +1,16 @@
 import '../../common/api_request_builder.dart';
 
-/// Gateway img2img request per the new-api OpenAI Images contract.
+/// Gateway text-to-image request per the new-api OpenAI Images contract.
 ///
-/// OpenAI-standard fields stay at the top level; NovelAI-specific parameters
-/// live in `params` (see `docs/OpenAI兼容接口对接文档.md`), and
-/// `response_format` only supports `b64_json`.
-class GatewayImageToImageRequestDto {
-  const GatewayImageToImageRequestDto({
+/// NovelAI-specific parameters live in the `params` object (see
+/// `docs/OpenAI兼容接口对接文档.md`), and `response_format` only supports
+/// `b64_json`. Multi-character prompts and Vibe references are carried inside
+/// `params` exactly as the gateway maps them to the native request.
+class GatewayTextToImageRequestDto {
+  const GatewayTextToImageRequestDto({
     required this.model,
     required this.prompt,
-    required this.image,
-    this.strength = 1,
-    this.noise = 0,
+    this.n = 1,
     this.size,
     this.width,
     this.height,
@@ -24,14 +23,18 @@ class GatewayImageToImageRequestDto {
     this.seed,
     this.quality = true,
     this.ucPreset,
+    this.sm = false,
+    this.smDyn = false,
+    this.characters = const [],
+    this.encodedReferences = const [],
+    this.referenceStrengths = const [],
+    this.informationExtractedValues = const [],
     this.responseFormat = 'b64_json',
   });
 
   final String model;
   final String prompt;
-  final String image;
-  final double strength;
-  final double noise;
+  final int n;
   final String? size;
   final int? width;
   final int? height;
@@ -44,19 +47,25 @@ class GatewayImageToImageRequestDto {
   final int? seed;
   final bool quality;
   final String? ucPreset;
+  final bool sm;
+  final bool smDyn;
+  final List<Map<String, Object?>> characters;
+  final List<String> encodedReferences;
+  final List<double> referenceStrengths;
+  final List<double> informationExtractedValues;
   final String responseFormat;
 }
 
-class GatewayImageToImageRequestBuilder
-    implements ApiRequestBuilder<GatewayImageToImageRequestDto> {
-  const GatewayImageToImageRequestBuilder();
+class GatewayTextToImageRequestBuilder
+    implements ApiRequestBuilder<GatewayTextToImageRequestDto> {
+  const GatewayTextToImageRequestBuilder();
 
   @override
   int get templateVersion => 1;
 
   @override
   JsonMap build(
-    GatewayImageToImageRequestDto request, {
+    GatewayTextToImageRequestDto request, {
     List<JsonMap> patches = const [],
   }) {
     final params = <String, Object?>{
@@ -67,15 +76,23 @@ class GatewayImageToImageRequestBuilder
       'noise_schedule': request.noiseSchedule,
       'quality': request.quality,
       if (request.ucPreset != null) 'uc_preset': request.ucPreset,
+      'sm': request.sm,
+      'sm_dyn': request.smDyn,
       if (request.negativePrompt != null && request.negativePrompt!.isNotEmpty)
         'negative_prompt': request.negativePrompt,
+      if (request.characters.isNotEmpty) 'characters': request.characters,
+      if (request.encodedReferences.isNotEmpty)
+        'reference_image_multiple': request.encodedReferences,
+      if (request.referenceStrengths.isNotEmpty)
+        'reference_strength_multiple': request.referenceStrengths,
+      if (request.informationExtractedValues.isNotEmpty)
+        'reference_information_extracted_multiple':
+            request.informationExtractedValues,
     };
     return applyRequestPatches({
       'model': request.model,
       'prompt': request.prompt,
-      'image': request.image,
-      'strength': request.strength,
-      'noise': request.noise,
+      'n': request.n,
       if (request.size != null) 'size': request.size,
       if (request.width != null) 'width': request.width,
       if (request.height != null) 'height': request.height,

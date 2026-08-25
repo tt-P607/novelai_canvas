@@ -7,10 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:novelai_canvas/core/network/backend_mode.dart';
 import 'package:novelai_canvas/domain/entities/advanced_generation.dart';
-import 'package:novelai_canvas/data/api/gateway/services/gateway_chat_service.dart';
 import 'package:novelai_canvas/data/api/gateway/services/gateway_image_to_image_service.dart';
 import 'package:novelai_canvas/data/api/gateway/services/gateway_inpaint_service.dart';
-import 'package:novelai_canvas/data/api/gateway/services/gateway_vibe_transfer_service.dart';
+import 'package:novelai_canvas/data/api/gateway/services/gateway_text_to_image_service.dart';
 import 'package:novelai_canvas/data/api/native/services/native_encode_vibe_service.dart';
 import 'package:novelai_canvas/data/api/native/services/native_image_to_image_service.dart';
 import 'package:novelai_canvas/data/api/native/services/native_inpaint_service.dart';
@@ -34,13 +33,13 @@ void main() {
     final gateway = await repository.execute(_task(BackendMode.gateway));
 
     expect(native.images.single.bytes, [1, 2, 3]);
-    // Gateway text-to-image now routes through /v1/chat/completions for
-    // maximum proxy compatibility. The chat response carries a markdown
-    // image URL which is materialised via the download client.
-    expect(gateway.images.single.bytes, [9, 8, 7]);
+    // Gateway text-to-image routes through /v1/images/generations with the
+    // b64_json response (new-api registers only this image endpoint).
+    expect(gateway.images.single.bytes, [4, 5, 6]);
     final adapter = gatewayDio.httpClientAdapter as _GenerationAdapter;
-    expect(adapter.lastPath, '/v1/chat/completions');
-    expect(adapter.lastJson?['response_format'], {'type': 'b64_json'});
+    expect(adapter.lastPath, '/v1/images/generations');
+    expect(adapter.lastJson?['response_format'], 'b64_json');
+    expect((adapter.lastJson?['params'] as Map)['steps'], 28);
   });
 
   test('统一生成仓库 materialize 网关 URL 图片', () async {
@@ -56,9 +55,11 @@ void main() {
     final result = await repository.execute(_task(BackendMode.gateway));
 
     expect(result.images.single.bytes, [9, 8, 7]);
+    final adapter = gatewayDio.httpClientAdapter as _GenerationAdapter;
+    expect(adapter.lastPath, '/v1/images/generations');
   });
 
-  test('网关文生图流式走 Chat SSE 并解析最终图片', () async {
+  test('网关文生图流式经 images/generations 生成最终图片', () async {
     final gatewayDio = Dio()..httpClientAdapter = _GenerationAdapter();
     final repository = _repository(
       Dio()..httpClientAdapter = _GenerationAdapter(),
@@ -70,11 +71,10 @@ void main() {
         .toList();
 
     final adapter = gatewayDio.httpClientAdapter as _GenerationAdapter;
-    expect(adapter.lastPath, '/v1/chat/completions');
-    expect(adapter.lastJson?['stream'], isTrue);
+    expect(adapter.lastPath, '/v1/images/generations');
     expect(previews, hasLength(1));
     expect(previews.single.isFinal, isTrue);
-    expect(previews.single.imageBytes, [7, 8, 9]);
+    expect(previews.single.imageBytes, [4, 5, 6]);
   });
 
   test('高级参数快照往返保留 Vibe、角色参考和多角色坐标', () {
@@ -139,7 +139,11 @@ void main() {
     await repository.execute(task);
 
     final adapter = gatewayDio.httpClientAdapter as _GenerationAdapter;
-    expect(adapter.lastPath, '/v1/chat/completions');
+    expect(adapter.lastPath, '/v1/images/generations');
+    expect(
+      adapter.lastJson?['params'] as Map,
+      isNot(contains('reference_image_multiple')),
+    );
   });
 
   test('网关多角色使用 Chat system message 契约', () async {
@@ -169,12 +173,11 @@ void main() {
     await repository.execute(task);
 
     final adapter = gatewayDio.httpClientAdapter as _GenerationAdapter;
-    expect(adapter.lastPath, '/v1/chat/completions');
-    final messages = adapter.lastJson?['messages'] as List;
-    expect(
-      (messages.last as Map)['content'].toString(),
-      contains('Characters:'),
-    );
+    expect(adapter.lastPath, '/v1/images/generations');
+    final params = (adapter.lastJson?['params'] as Map?);
+    final characters = (params?['characters'] as List?);
+    expect(characters, hasLength(1));
+    expect((characters!.first as Map)['prompt'], 'red hair');
   });
 }
 
@@ -188,8 +191,7 @@ GenerationRepositoryImpl _repository(
   nativeInpaintService: NativeInpaintService(nativeDio),
   nativeStreamService: NativeStreamService(nativeDio),
   nativeEncodeVibeService: NativeEncodeVibeService(nativeDio),
-  gatewayChatService: GatewayChatService(gatewayDio),
-  gatewayVibeTransferService: GatewayVibeTransferService(gatewayDio),
+  gatewayTextToImageService: GatewayTextToImageService(gatewayDio),
   gatewayImageToImageService: GatewayImageToImageService(gatewayDio),
   gatewayInpaintService: GatewayInpaintService(gatewayDio),
   downloadClient: downloadDio,

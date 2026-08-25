@@ -197,7 +197,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ? AppConstants.nativeBaseUrl
                               : 'https://example.com',
                           helperText: _mode == BackendMode.native
-                              ? '可填写根地址或完整生成地址；软件会移除 /ai/generate-image，再按请求自动补全 /_api 和具体路径。'
+                              ? '填写中转站根地址或完整生成地址；会自动补全 /origin 和具体路径。'
                               : '填写 OpenAI 兼容服务地址，无需在末尾填写 /v1。',
                           prefixIcon: const Icon(Icons.link_rounded),
                         ),
